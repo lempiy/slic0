@@ -1,0 +1,9 @@
+[package]
+name = "slic"
+version = "0.1.0"
+authors = ["lempiy <lempiyada@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+libmath = "0.2.1"
+image = "0.22.1"
