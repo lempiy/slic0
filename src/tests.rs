@@ -1,5 +1,5 @@
 use super::*;
-use image::{ImageBuffer, RgbImage, Rgb};
+use image::{ImageBuffer, Rgb, RgbImage};
 
 #[test]
 fn rgb_to_lab_works() {

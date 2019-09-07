@@ -1,7 +1,21 @@
 use math::round::half_up;
+use std::ops;
+
+pub type LabColor = [f64; 3];
+
+impl ops::Sub<LabColor> for LabColor {
+    type Output = LabColor;
+    fn sub(self, other: LabColor) -> LabColor {
+        [
+            self[0] - other[0],
+            self[1] - other[1],
+            self[2] - other[2],
+        ]
+    }
+}
 
 // Illuminant and reference angle for output values: D65 2°
-pub fn rgb_2_lab(color: [f64; 3]) -> [f64; 3] {
+pub fn rgb_2_lab(color: [f64; 3]) -> LabColor {
     let mut rgb = [0.0; 3];
     for i in 0..color.len() {
         rgb[i] = rgb_stab(color[i]);
