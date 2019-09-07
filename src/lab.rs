@@ -3,15 +3,8 @@ use std::ops;
 
 pub type LabColor = [f64; 3];
 
-impl ops::Sub<LabColor> for LabColor {
-    type Output = LabColor;
-    fn sub(self, other: LabColor) -> LabColor {
-        [
-            self[0] - other[0],
-            self[1] - other[1],
-            self[2] - other[2],
-        ]
-    }
+pub fn sub(color: LabColor, other: LabColor) -> LabColor {
+    [color[0] - other[0], color[1] - other[1], color[2] - other[2]]
 }
 
 // Illuminant and reference angle for output values: D65 2°

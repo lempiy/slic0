@@ -1,5 +1,5 @@
 extern crate math;
-use crate::lab::{rgb_2_lab, LabColor};
+use crate::lab::{rgb_2_lab, sub, LabColor};
 use image::{Pixel, Pixels, RgbImage};
 use math::round::half_up;
 
@@ -19,41 +19,52 @@ fn get_pixel_cross_neighbourhood(
     x: u32,
     y: u32,
 ) -> (
-    Option(LabPixel),
-    Option(LabPixel),
-    Option(LabPixel),
-    Option(LabPixel),
+    Option<LabPixel>,
+    Option<LabPixel>,
+    Option<LabPixel>,
+    Option<LabPixel>,
 ) {
     let (w, h) = img.dimensions();
-    let (mut left, mut right, mut top, mut bottom) = (None, None, None, None);
-    if x != 0 {
-        left = get_lab_pixel(img, x - 1, y);
-    };
-    if x + 1 < w {
-        right = get_lab_pixel(img, x + 1, y);
-    };
-    if y != 0 {
-        top = get_lab_pixel(img, y - 1, y);
-    };
-    if y + 1 < h {
-        bottom = get_lab_pixel(img, y + 1, y);
-    };
-    (left, right, top, bottom)
+    (
+        if x != 0 {
+            Some(get_lab_pixel(img, x - 1, y))
+        } else {
+            None
+        },
+        if x + 1 < w {
+            Some(get_lab_pixel(img, x + 1, y))
+        } else {
+            None
+        },
+        if y != 0 {
+            Some(get_lab_pixel(img, y - 1, y))
+        } else {
+            None
+        },
+        if y + 1 < h {
+            Some(get_lab_pixel(img, y + 1, y))
+        } else {
+            None
+        },
+    )
 }
 
 fn get_gradient_position(img: &RgbImage, x: u32, y: u32) -> f64 {
-    let (lx, ly, color) = get_lab_pixel(img, x, y);
+    let pxl = get_lab_pixel(img, x, y);
     let (left, right, top, bottom) = get_pixel_cross_neighbourhood(img, x, y);
-    let left_color = get_neighbour_color_vector(&pxl, left);
-    let right_color = get_neighbour_color_vector(&pxl, right);
-    let top_color = get_neighbour_color_vector(&pxl, top);
-    let bottom_color = get_neighbour_color_vector(&pxl, bottom);
-    l2_norm(right_color - left_color).powf(2_f64)
-        + l2_norm(bottom_color - top_color).powf(2_f64)
+    let left_color:LabColor = get_neighbour_color_vector(&pxl, left);
+    let right_color:LabColor = get_neighbour_color_vector(&pxl, right);
+    let top_color: LabColor = get_neighbour_color_vector(&pxl, top);
+    let bottom_color:LabColor = get_neighbour_color_vector(&pxl, bottom);
+    half_up(
+        l2_norm(sub(right_color, left_color)).powf(2_f64)
+            + l2_norm(sub(bottom_color, top_color)).powf(2_f64),
+        4,
+    )
 }
 
-fn get_neighbour_color_vector(pxl: &LabPixel, neighbour: Option(LabPixel)) -> LabColor {
-    if let n_pxl = Some(neighbour) {
+fn get_neighbour_color_vector(pxl: &LabPixel, neighbour: Option<LabPixel>) -> LabColor {
+    if let Some(n_pxl) = neighbour {
         let (_, _, n_color) = n_pxl;
         n_color
     } else {
@@ -88,7 +99,11 @@ fn get_spacial_distance(p1: (u32, u32), p2: (u32, u32)) -> f64 {
 fn get_distance(p1: LabPixel, p2: LabPixel, m: f64, S: f64) -> f64 {
     let (p1x, p1y, color_p1) = p1;
     let (p2x, p2y, color_p2) = p2;
-    get_color_distance(color_p1, color_p2) + m / S * get_spacial_distance((p1x, p1y), (p2x, p2y))
+    half_up(
+        get_color_distance(color_p1, color_p2)
+            + m / S * get_spacial_distance((p1x, p1y), (p2x, p2y)),
+        4,
+    )
 }
 
 type LabPixel = (u32, u32, LabColor);
