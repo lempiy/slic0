@@ -5,6 +5,59 @@ use math::round::half_up;
 
 pub mod lab;
 
+struct SuperPixel {
+    label: u32,
+    centroid: LabPixel,
+}
+
+struct Slic {
+    k: u32,
+    n: u32,
+    s: f64,
+    compactness: f64,
+    super_pixels: Vec<SuperPixel>,
+    distances: Vec<f64>,
+    labels: Vec<u32>,
+    img: *RgbImage,
+}
+
+impl Slic {
+
+}
+
+fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> *Slic {
+    let (w, h) = img.dimensions();
+    let n = w*h;
+    let super_pixel_size = get_super_pixel_size(w, h, num_of_super_pixels);
+    let super_pixel_edge = f64::from(super_pixel_size).sqrt().round() as u32;
+    let mut super_pixels: Vec<SuperPixel> = Vec::with_capacity(num_of_super_pixels as usize);
+    let (mut x, mut y) = (0_u32, 0_u32);
+    let super_pixels_per_width = (f64::from(w) / f64::from(super_pixel_edge)).round() as u32;
+    let super_pixels_per_height = num_of_super_pixels / super_pixels_per_width;
+    for y in 0..super_pixels_per_height {
+        for x in 0..super_pixels_per_width {
+              // TODO
+        };
+    };
+    let slic = &Slic{
+        k: num_of_super_pixels,
+        n,
+        s: (f64::from(num_of_super_pixels) / f64::from(n)).sqrt(),
+        compactness,
+        super_pixels,
+        distances: vec![f64::MAX; n],
+        labels: vec![0; n],
+        img,
+    };
+    slic
+}
+
+
+
+fn get_super_pixel_size(w: u32, h: u32, num: u32) -> u32 {
+    (f64::from(w) * f64::from(h) / f64::from(num)).round() as u32
+}
+
 fn get_lab_pixel(img: &RgbImage, x: u32, y: u32) -> LabPixel {
     let pxl = *img.get_pixel(x, y);
     (
@@ -49,13 +102,44 @@ fn get_pixel_cross_neighbourhood(
     )
 }
 
+fn get_pixel_3x3_neighbourhood(img: &RgbImage, x: u32, y: u32) -> ([[Option<LabPixel>; 3]; 3]) {
+    let (w, h) = img.dimensions();
+    let pxl = get_lab_pixel(img, x, y);
+    let (left, right, top, bottom) = get_pixel_cross_neighbourhood(img, x, y);
+    let top_left = if x != 0 && y != 0 {
+        Some(get_lab_pixel(img, x - 1, y - 1))
+    } else {
+        None
+    };
+    let bottom_left = if x != 0 && y + 1 < h {
+        Some(get_lab_pixel(img, x - 1, y + 1))
+    } else {
+        None
+    };
+    let top_right = if x + 1 < w && y != 0 {
+        Some(get_lab_pixel(img, x + 1, y - 1))
+    } else {
+        None
+    };
+    let bottom_right = if x + 1 < w && y + 1 < h {
+        Some(get_lab_pixel(img, x + 1, y + 1))
+    } else {
+        None
+    };
+    [
+        [top_left, top, top_right],
+        [left, Some(pxl), right],
+        [bottom_left, bottom, bottom_right],
+    ]
+}
+
 fn get_gradient_position(img: &RgbImage, x: u32, y: u32) -> f64 {
     let pxl = get_lab_pixel(img, x, y);
     let (left, right, top, bottom) = get_pixel_cross_neighbourhood(img, x, y);
-    let left_color:LabColor = get_neighbour_color_vector(&pxl, left);
-    let right_color:LabColor = get_neighbour_color_vector(&pxl, right);
-    let top_color: LabColor = get_neighbour_color_vector(&pxl, top);
-    let bottom_color:LabColor = get_neighbour_color_vector(&pxl, bottom);
+    let left_color = get_neighbour_color_vector(&pxl, left);
+    let right_color = get_neighbour_color_vector(&pxl, right);
+    let top_color = get_neighbour_color_vector(&pxl, top);
+    let bottom_color = get_neighbour_color_vector(&pxl, bottom);
     half_up(
         l2_norm(sub(right_color, left_color)).powf(2_f64)
             + l2_norm(sub(bottom_color, top_color)).powf(2_f64),

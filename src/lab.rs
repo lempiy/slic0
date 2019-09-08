@@ -4,7 +4,11 @@ use std::ops;
 pub type LabColor = [f64; 3];
 
 pub fn sub(color: LabColor, other: LabColor) -> LabColor {
-    [color[0] - other[0], color[1] - other[1], color[2] - other[2]]
+    [
+        color[0] - other[0],
+        color[1] - other[1],
+        color[2] - other[2],
+    ]
 }
 
 // Illuminant and reference angle for output values: D65 2°
