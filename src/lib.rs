@@ -2,6 +2,8 @@ extern crate math;
 use crate::lab::{rgb_2_lab, sub, LabColor};
 use image::{Pixel, Pixels, RgbImage};
 use math::round::half_up;
+use std::f64::MAX;
+use std::boxed::Box;
 
 pub mod lab;
 
@@ -10,7 +12,7 @@ struct SuperPixel {
     centroid: LabPixel,
 }
 
-struct Slic {
+struct Slic<'a> {
     k: u32,
     n: u32,
     s: f64,
@@ -18,14 +20,10 @@ struct Slic {
     super_pixels: Vec<SuperPixel>,
     distances: Vec<f64>,
     labels: Vec<u32>,
-    img: *RgbImage,
+    img: &'a RgbImage,
 }
 
-impl Slic {
-
-}
-
-fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> *Slic {
+fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic {
     let (w, h) = img.dimensions();
     let n = w*h;
     let super_pixel_size = get_super_pixel_size(w, h, num_of_super_pixels);
@@ -36,22 +34,46 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> *Slic
     let super_pixels_per_height = num_of_super_pixels / super_pixels_per_width;
     for y in 0..super_pixels_per_height {
         for x in 0..super_pixels_per_width {
-              // TODO
+            let (sx, sy) = (x * super_pixels_per_width, y * super_pixels_per_height);
+            let (cx, cy) = (sx + (f64::from(super_pixels_per_width) / 0.5_f64).round() as u32,
+                            sy + (f64::from(super_pixels_per_height) / 0.5_f64).round() as u32);
+            let label = y * x + x + 1;
+            super_pixels.push(SuperPixel{
+                label,
+                centroid: (cx, cy, [0.0, 0.0, 0.0]) // TODO
+            })
         };
     };
-    let slic = &Slic{
+    let slic = Slic{
         k: num_of_super_pixels,
         n,
         s: (f64::from(num_of_super_pixels) / f64::from(n)).sqrt(),
         compactness,
         super_pixels,
-        distances: vec![f64::MAX; n],
-        labels: vec![0; n],
+        distances: vec![MAX; n as usize],
+        labels: vec![0; n as usize],
         img,
     };
     slic
 }
 
+
+fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
+    get_pixel_3x3_neighbourhood(img, cx, cy)
+        .into_iter()
+        .flatten()
+        .fold((0_f64, None), |acc, option| {
+            if let Some(next_pxl) = option {
+                let (prev_gradient, prev_pxl) = acc;
+                let (x, y, color) = next_pxl;
+                let next_gradient = get_gradient_position(img, x, y);
+                (if next_gradient < prev_gradient { next_gradient } else { prev_gradient },
+                Some(next_pxl))
+            } else {
+                acc
+            }
+        })
+}
 
 
 fn get_super_pixel_size(w: u32, h: u32, num: u32) -> u32 {
