@@ -59,20 +59,21 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic 
 
 
 fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
-    get_pixel_3x3_neighbourhood(img, cx, cy)
+    let (_, pxl) = get_pixel_3x3_neighbourhood(img, cx, cy)
         .into_iter()
         .flatten()
         .fold((0_f64, None), |acc, option| {
             if let Some(next_pxl) = option {
                 let (prev_gradient, prev_pxl) = acc;
                 let (x, y, color) = next_pxl;
-                let next_gradient = get_gradient_position(img, x, y);
+                let next_gradient = get_gradient_position(img, *x, *y);
                 (if next_gradient < prev_gradient { next_gradient } else { prev_gradient },
-                Some(next_pxl))
+                Some(*next_pxl))
             } else {
                 acc
             }
-        })
+        });
+    pxl.unwrap()
 }
 
 
