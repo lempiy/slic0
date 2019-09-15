@@ -12,14 +12,18 @@ struct SuperPixel {
     centroid: LabPixel,
 }
 
+const threshold:f64 = MAX;
+
 struct Slic<'a> {
     k: u32,
     n: u32,
     s: f64,
+    super_pixel_width: u32,
+    super_pixel_height: u32,
     compactness: f64,
     super_pixels: Vec<SuperPixel>,
     distances: Vec<f64>,
-    labels: Vec<u32>,
+    labels: Vec<i64>,
     img: &'a RgbImage,
 }
 
@@ -27,34 +31,36 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic 
     let (w, h) = img.dimensions();
     let n = w*h;
     let super_pixel_size = get_super_pixel_size(w, h, num_of_super_pixels);
-    let super_pixel_edge = f64::from(super_pixel_size).sqrt().round() as u32;
+    let super_pixel_edge = f64::from(super_pixel_size).sqrt().ceil() as u32;
     let mut super_pixels: Vec<SuperPixel> = Vec::with_capacity(num_of_super_pixels as usize);
-    let (mut x, mut y) = (0_u32, 0_u32);
     let super_pixels_per_width = (f64::from(w) / f64::from(super_pixel_edge)).round() as u32;
     let super_pixels_per_height = num_of_super_pixels / super_pixels_per_width;
+    let (super_pixel_width, super_pixel_height) = (w / super_pixels_per_width, h / super_pixels_per_height);
     for y in 0..super_pixels_per_height {
         for x in 0..super_pixels_per_width {
-            let (sx, sy) = (x * super_pixels_per_width, y * super_pixels_per_height);
-            let (cx, cy) = (sx + (f64::from(super_pixels_per_width) / 0.5_f64).round() as u32,
-                            sy + (f64::from(super_pixels_per_height) / 0.5_f64).round() as u32);
+            let (sx, sy) = (x * super_pixel_width, y * super_pixel_height);
+            let (cx, cy) = (sx + (f64::from(super_pixel_width) * 0.5_f64).round() as u32,
+                            sy + (f64::from(super_pixel_height) * 0.5_f64).round() as u32);
             let label = y * x + x + 1;
+            let centroid = get_initial_centroid(img, cx, cy);
             super_pixels.push(SuperPixel{
                 label,
-                centroid: (cx, cy, [0.0, 0.0, 0.0]) // TODO
+                centroid
             })
         };
     };
-    let slic = Slic{
-        k: num_of_super_pixels,
+    Slic{
+        k: super_pixels_per_width * super_pixels_per_height,
         n,
         s: (f64::from(num_of_super_pixels) / f64::from(n)).sqrt(),
+        super_pixel_width,
+        super_pixel_height,
         compactness,
         super_pixels,
         distances: vec![MAX; n as usize],
-        labels: vec![0; n as usize],
+        labels: vec![-1; n as usize],
         img,
-    };
-    slic
+    }
 }
 
 
@@ -67,8 +73,7 @@ fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
                 let (prev_gradient, prev_pxl) = acc;
                 let (x, y, color) = next_pxl;
                 let next_gradient = get_gradient_position(img, *x, *y);
-                (if next_gradient < prev_gradient { next_gradient } else { prev_gradient },
-                Some(*next_pxl))
+                if next_gradient <= prev_gradient { (next_gradient, Some(*next_pxl)) } else { acc }
             } else {
                 acc
             }
@@ -78,7 +83,7 @@ fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
 
 
 fn get_super_pixel_size(w: u32, h: u32, num: u32) -> u32 {
-    (f64::from(w) * f64::from(h) / f64::from(num)).round() as u32
+    (f64::from(w) * f64::from(h) / f64::from(num)).ceil() as u32
 }
 
 fn get_lab_pixel(img: &RgbImage, x: u32, y: u32) -> LabPixel {
@@ -113,12 +118,12 @@ fn get_pixel_cross_neighbourhood(
             None
         },
         if y != 0 {
-            Some(get_lab_pixel(img, y - 1, y))
+            Some(get_lab_pixel(img, y, y - 1))
         } else {
             None
         },
         if y + 1 < h {
-            Some(get_lab_pixel(img, y + 1, y))
+            Some(get_lab_pixel(img, y, y + 1))
         } else {
             None
         },
@@ -185,6 +190,10 @@ fn l2_norm(y: LabColor) -> f64 {
     y.iter()
         .fold(0f64, |sum, &ey| sum + (ey.abs()).powf(2.))
         .sqrt()
+}
+
+fn l1_distance(x1: u32, y1: u32, x2: u32, y2: u32) -> u32 {
+    ((x1 as i64 - x2 as i64).abs() + (y1 as i64 - y2 as i64).abs()) as u32
 }
 
 fn get_color_distance(p1: LabColor, p2: LabColor) -> f64 {

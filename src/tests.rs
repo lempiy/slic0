@@ -34,3 +34,18 @@ fn get_lab_pixel_works() {
     assert_eq!(color1[1].round(), 0.0);
     assert_eq!(color1[2].round(), 0.0);
 }
+
+#[test]
+fn get_initial_centroid_works() {
+    let mut image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(1000, 500);
+    image.put_pixel(8, 8, Rgb([255, 32, 255]));
+    image.put_pixel(20, 20, Rgb([31, 32, 255]));
+    image.put_pixel(90, 89, Rgb([0, 32, 255]));
+    image.put_pixel(90, 90, Rgb([31, 32, 255]));
+    image.put_pixel(91, 91, Rgb([0, 255, 0]));
+    image.put_pixel(92, 91, Rgb([255, 255, 0]));
+    let centroid = get_initial_centroid(&image, 90, 90);
+    println!("{} {} color: {} {} {}", centroid.0, centroid.1, centroid.2[0], centroid.2[1], centroid.2[2]);
+    assert_eq!(centroid.0, 89);
+    assert_eq!(centroid.1, 91);
+}
