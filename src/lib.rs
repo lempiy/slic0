@@ -2,8 +2,9 @@ extern crate math;
 use crate::lab::{rgb_2_lab, sub, LabColor};
 use image::{Pixel, Pixels, RgbImage};
 use math::round::half_up;
-use std::f64::MAX;
 use std::boxed::Box;
+use std::f64::MAX;
+use std::cmp::min;
 
 pub mod lab;
 
@@ -12,13 +13,15 @@ struct SuperPixel {
     centroid: LabPixel,
 }
 
-const threshold:f64 = MAX;
+const threshold: f64 = MAX;
 
 struct Slic<'a> {
     k: u32,
     n: u32,
     s: f64,
+    super_pixels_per_width: u32,
     super_pixel_width: u32,
+    super_pixels_per_height: u32,
     super_pixel_height: u32,
     compactness: f64,
     super_pixels: Vec<SuperPixel>,
@@ -27,33 +30,55 @@ struct Slic<'a> {
     img: &'a RgbImage,
 }
 
+impl Slic {
+    fn run(&mut self) {
+        let offset = (2 * self.s).ceil() as u32;
+
+        self.super_pixels.into_iter().for_each(|pxl| {
+          let (cx, cy, center_color) = pxl.centroid;
+          let x1 = if cx > offset { cx - offset } else { 0 };
+          let y1 = if cy > offset { cy - offset } else { 0 };
+          let x2 = if cx + offset < self.img.width() { cx + offset } else { self.img.width() - 1};
+          let y2 = if cy + offset < self.img.height() { cy + offset } else { self.img.height() - 1};
+          for x in x1..x2 {
+            for y in y1..y2 {
+              let prev_distance = self.distances[y * x];
+              // calc distance
+            }
+          }
+        })
+    }
+}
+
 fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic {
     let (w, h) = img.dimensions();
-    let n = w*h;
+    let n = w * h;
     let super_pixel_size = get_super_pixel_size(w, h, num_of_super_pixels);
     let super_pixel_edge = f64::from(super_pixel_size).sqrt().ceil() as u32;
     let mut super_pixels: Vec<SuperPixel> = Vec::with_capacity(num_of_super_pixels as usize);
     let super_pixels_per_width = (f64::from(w) / f64::from(super_pixel_edge)).round() as u32;
     let super_pixels_per_height = num_of_super_pixels / super_pixels_per_width;
-    let (super_pixel_width, super_pixel_height) = (w / super_pixels_per_width, h / super_pixels_per_height);
+    let (super_pixel_width, super_pixel_height) =
+        (w / super_pixels_per_width, h / super_pixels_per_height);
     for y in 0..super_pixels_per_height {
         for x in 0..super_pixels_per_width {
             let (sx, sy) = (x * super_pixel_width, y * super_pixel_height);
-            let (cx, cy) = (sx + (f64::from(super_pixel_width) * 0.5_f64).round() as u32,
-                            sy + (f64::from(super_pixel_height) * 0.5_f64).round() as u32);
+            let (cx, cy) = (
+                sx + (f64::from(super_pixel_width) * 0.5_f64).round() as u32,
+                sy + (f64::from(super_pixel_height) * 0.5_f64).round() as u32,
+            );
             let label = y * x + x + 1;
             let centroid = get_initial_centroid(img, cx, cy);
-            super_pixels.push(SuperPixel{
-                label,
-                centroid
-            })
-        };
-    };
-    Slic{
+            super_pixels.push(SuperPixel { label, centroid })
+        }
+    }
+    Slic {
         k: super_pixels_per_width * super_pixels_per_height,
         n,
         s: (f64::from(num_of_super_pixels) / f64::from(n)).sqrt(),
+        super_pixels_per_width,
         super_pixel_width,
+        super_pixels_per_height,
         super_pixel_height,
         compactness,
         super_pixels,
@@ -62,7 +87,6 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic 
         img,
     }
 }
-
 
 fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
     let (_, pxl) = get_pixel_3x3_neighbourhood(img, cx, cy)
@@ -73,14 +97,17 @@ fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
                 let (prev_gradient, prev_pxl) = acc;
                 let (x, y, color) = next_pxl;
                 let next_gradient = get_gradient_position(img, *x, *y);
-                if next_gradient <= prev_gradient { (next_gradient, Some(*next_pxl)) } else { acc }
+                if next_gradient <= prev_gradient {
+                    (next_gradient, Some(*next_pxl))
+                } else {
+                    acc
+                }
             } else {
                 acc
             }
         });
     pxl.unwrap()
 }
-
 
 fn get_super_pixel_size(w: u32, h: u32, num: u32) -> u32 {
     (f64::from(w) * f64::from(h) / f64::from(num)).ceil() as u32
