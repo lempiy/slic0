@@ -5,9 +5,11 @@ use math::round::half_up;
 use std::boxed::Box;
 use std::f64::MAX;
 use std::cmp::min;
+use std::marker::{Copy};
 
 pub mod lab;
 
+#[derive(Copy, Clone)]
 struct SuperPixel {
     label: u32,
     centroid: LabPixel,
@@ -30,23 +32,29 @@ struct Slic<'a> {
     img: &'a RgbImage,
 }
 
-impl Slic {
+impl Slic<'_> {
     fn run(&mut self) {
-        let offset = (2 * self.s).ceil() as u32;
-
-        self.super_pixels.into_iter().for_each(|pxl| {
+        let offset = (self.s).ceil() as u32;
+        self.super_pixels.clone().into_iter().for_each(|pxl| {
           let (cx, cy, center_color) = pxl.centroid;
           let x1 = if cx > offset { cx - offset } else { 0 };
           let y1 = if cy > offset { cy - offset } else { 0 };
           let x2 = if cx + offset < self.img.width() { cx + offset } else { self.img.width() - 1};
           let y2 = if cy + offset < self.img.height() { cy + offset } else { self.img.height() - 1};
-          for x in x1..x2 {
-            for y in y1..y2 {
-              let prev_distance = self.distances[y * x];
+          for y in y1..(y2+1) {
+            for x in x1..(x2+1) {
+              let idx = (y * self.img.width() + x) as usize;
+              let prev_distance = self.distances[idx];
               // calc distance
+              let pixel = get_lab_pixel(self.img, x, y);
+              let new_distance = get_distance(pxl.centroid, pixel, self.compactness, self.s);
+              if prev_distance > new_distance {
+                self.distances[idx] = new_distance;
+                self.labels[idx] = pxl.label as i64;
+              };
             }
           }
-        })
+        });
     }
 }
 
@@ -67,15 +75,16 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic 
                 sx + (f64::from(super_pixel_width) * 0.5_f64).round() as u32,
                 sy + (f64::from(super_pixel_height) * 0.5_f64).round() as u32,
             );
-            let label = y * x + x + 1;
+            let label = y * super_pixels_per_width + x + 1;
             let centroid = get_initial_centroid(img, cx, cy);
             super_pixels.push(SuperPixel { label, centroid })
         }
     }
+    let k = super_pixels_per_width * super_pixels_per_height;
     Slic {
-        k: super_pixels_per_width * super_pixels_per_height,
+        k,
         n,
-        s: (f64::from(num_of_super_pixels) / f64::from(n)).sqrt(),
+        s: (n as f64 / k as f64).sqrt(),
         super_pixels_per_width,
         super_pixel_width,
         super_pixels_per_height,
@@ -234,7 +243,7 @@ fn get_spacial_distance(p1: (u32, u32), p2: (u32, u32)) -> f64 {
     let (p1x, p1y) = p1;
     let (p2x, p2y) = p2;
     half_up(
-        (((p1x - p2x) as f64).powi(2) + ((p1y - p2y) as f64).powi(2)).sqrt(),
+        (((p1x as i64 - p2x as i64) as f64).powi(2) + ((p1y as i64 - p2y as i64) as f64).powi(2)).sqrt(),
         4,
     )
 }

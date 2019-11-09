@@ -45,7 +45,28 @@ fn get_initial_centroid_works() {
     image.put_pixel(91, 91, Rgb([0, 255, 0]));
     image.put_pixel(92, 91, Rgb([255, 255, 0]));
     let centroid = get_initial_centroid(&image, 90, 90);
-    println!("{} {} color: {} {} {}", centroid.0, centroid.1, centroid.2[0], centroid.2[1], centroid.2[2]);
     assert_eq!(centroid.0, 89);
     assert_eq!(centroid.1, 91);
 }
+
+#[test]
+fn slic_run_works() {
+  let mut image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(200, 200);
+  image.put_pixel(8, 8, Rgb([255, 32, 255]));
+  image.put_pixel(20, 20, Rgb([31, 32, 255]));
+  image.put_pixel(49, 40, Rgb([0, 32, 255]));
+  image.put_pixel(35, 16, Rgb([31, 32, 255]));
+  image.put_pixel(22, 34, Rgb([0, 255, 0]));
+  image.put_pixel(17, 21, Rgb([255, 255, 0]));
+  let mut slic = get_slic(&image, 9, 10.0);
+  slic.run();
+  println!("{}", slic.super_pixels.len());
+  slic.labels.into_iter().enumerate().for_each(|(i, x)| {
+    print!("{}", x);
+    if ((i+1) % 200) == 0 {
+      println!();
+    }
+  });
+  assert_eq!(false, true);
+}
+
