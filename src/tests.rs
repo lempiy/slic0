@@ -1,5 +1,5 @@
 use super::*;
-use image::{ImageBuffer, Rgb, RgbImage};
+use image::{ImageBuffer, Rgb, RgbImage, open};
 
 #[test]
 fn rgb_to_lab_works() {
@@ -51,22 +51,49 @@ fn get_initial_centroid_works() {
 
 #[test]
 fn slic_run_works() {
-  let mut image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(200, 200);
-  image.put_pixel(8, 8, Rgb([255, 32, 255]));
-  image.put_pixel(20, 20, Rgb([31, 32, 255]));
-  image.put_pixel(49, 40, Rgb([0, 32, 255]));
-  image.put_pixel(35, 16, Rgb([31, 32, 255]));
-  image.put_pixel(22, 34, Rgb([0, 255, 0]));
-  image.put_pixel(17, 21, Rgb([255, 255, 0]));
-  let mut slic = get_slic(&image, 9, 10.0);
+  let mut image = open("./fixture/test.jpg")
+    .ok().expect("Cannot open image");
+
+  let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
+
+  let mut slic = get_slic(img, 9, 10.0);
+
   slic.run();
-  println!("{}", slic.super_pixels.len());
-  slic.labels.into_iter().enumerate().for_each(|(i, x)| {
-    print!("{}", x);
+
+  let e = slic.recompute_centers();
+  slic.labels.iter().enumerate().for_each(|(i, x)| {
+    print!("{}", *x);
     if ((i+1) % 200) == 0 {
       println!();
     }
   });
+  println!("E: {}", e);
+  slic.run();
+
+  let e2 = slic.recompute_centers();
+  slic.labels.iter().enumerate().for_each(|(i, x)| {
+    print!("{}", *x);
+    if ((i+1) % 200) == 0 {
+      println!();
+    }
+  });
+  println!("E: {}", e2);
+  let e3 = slic.recompute_centers();
+  slic.labels.iter().enumerate().for_each(|(i, x)| {
+    print!("{}", *x);
+    if ((i+1) % 200) == 0 {
+      println!();
+    }
+  });
+  println!("E: {}", e3);
+  let e4 = slic.recompute_centers();
+  slic.labels.iter().enumerate().for_each(|(i, x)| {
+    print!("{}", *x);
+    if ((i+1) % 200) == 0 {
+      println!();
+    }
+  });
+  println!("E: {}", e4);
   assert_eq!(false, true);
 }
 

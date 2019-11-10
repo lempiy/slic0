@@ -6,6 +6,7 @@ use std::boxed::Box;
 use std::f64::MAX;
 use std::cmp::min;
 use std::marker::{Copy};
+use std::borrow::BorrowMut;
 
 pub mod lab;
 
@@ -13,6 +14,16 @@ pub mod lab;
 struct SuperPixel {
     label: u32,
     centroid: LabPixel,
+}
+
+struct AvgValues {
+  l: Vec<f64>,
+  a: Vec<f64>,
+  b: Vec<f64>,
+  x: Vec<f64>,
+  y: Vec<f64>,
+  count: Vec<f64>,
+  distances: u32,
 }
 
 const threshold: f64 = MAX;
@@ -56,6 +67,50 @@ impl Slic<'_> {
           }
         });
     }
+
+  fn recompute_centers(&mut self)-> u32 {
+    let w = self.img.width();
+    let h = self.img.height();
+    let k = self.k as usize;
+    let mut values = AvgValues{
+      l: vec![0.0; k],
+      a: vec![0.0; k],
+      b: vec![0.0; k],
+      x: vec![0.0; k],
+      y: vec![0.0; k],
+      count: vec![0.0; k],
+      distances: 0,
+    };
+    for y in 0..h {
+      for x in 0..w {
+        let label_idx = (y * w + x) as usize;
+        let label = self.labels[label_idx] as usize - 1;
+        self.distances[label] = MAX;
+        let (x, y, color) = get_lab_pixel(self.img, x, y);
+        values.x[label] += x as f64;
+        values.y[label] += y as f64;
+        values.l[label] += color[0];
+        values.a[label] += color[1];
+        values.b[label] += color[2];
+        values.count[label] += 1.0;
+      }
+    }
+    self.super_pixels.iter_mut().for_each(|super_pixel| {
+      let label = super_pixel.label as usize - 1;
+      let (cx, cy, _) = super_pixel.centroid;
+      let count = values.count[label];
+      let l = half_up((values.l[label] / count), 4);
+      let a = half_up((values.a[label] / count), 4);
+      let b = half_up((values.b[label] / count), 4);
+      let x = (values.x[label] / count).round() as u32;
+      let y = (values.y[label] / count).round() as u32;
+      let distance = l1_distance(cx, cy, x, y);
+      values.distances += distance;
+      super_pixel.centroid = (x, y, [l, a, b]);
+      println!("({} {}) label {} x {} y {} R {} G {} B {} distance {}", cx, cy, label + 1, x, y, l, a, b, distance);
+    });
+    values.distances /  self.k
+  }
 }
 
 fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic {
@@ -72,8 +127,8 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic 
         for x in 0..super_pixels_per_width {
             let (sx, sy) = (x * super_pixel_width, y * super_pixel_height);
             let (cx, cy) = (
-                sx + (f64::from(super_pixel_width) * 0.5_f64).round() as u32,
-                sy + (f64::from(super_pixel_height) * 0.5_f64).round() as u32,
+                sx + (super_pixel_width as f64 * 0.5_f64).round() as u32,
+                sy + (super_pixel_height as f64 * 0.5_f64).round() as u32,
             );
             let label = y * super_pixels_per_width + x + 1;
             let centroid = get_initial_centroid(img, cx, cy);
@@ -101,7 +156,7 @@ fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
     let (_, pxl) = get_pixel_3x3_neighbourhood(img, cx, cy)
         .into_iter()
         .flatten()
-        .fold((0_f64, None), |acc, option| {
+        .fold((MAX, None), |acc, option| {
             if let Some(next_pxl) = option {
                 let (prev_gradient, prev_pxl) = acc;
                 let (x, y, color) = next_pxl;
@@ -154,12 +209,12 @@ fn get_pixel_cross_neighbourhood(
             None
         },
         if y != 0 {
-            Some(get_lab_pixel(img, y, y - 1))
+            Some(get_lab_pixel(img, x, y - 1))
         } else {
             None
         },
         if y + 1 < h {
-            Some(get_lab_pixel(img, y, y + 1))
+            Some(get_lab_pixel(img, x, y + 1))
         } else {
             None
         },
