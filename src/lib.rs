@@ -111,7 +111,33 @@ impl Slic<'_> {
     });
     values.distances /  self.k
   }
+  fn enforce_connectivity(&mut self) {
+    let w = self.img.width();
+    let h = self.img.height();
+    for y in 0..h {
+      for x in 0..w {
+        let label_idx = self.get_label_index(x, y).expect("Index out of range");
+        let label = self.labels[label_idx] as usize - 1;
+      }
+    }
+  }
+
+  fn get_pixel_label(&self, x: u32, y: u32) -> Option<usize> {
+
+  }
+
+  fn get_label_index(&self, x: u32, y: u32)-> Option<usize> {
+    if x >= self.img.Width() {
+      return None
+    }
+    if y >= self.img.height() {
+      return None
+    }
+    Some((y * self.img.width() + x) as usize)
+  }
 }
+
+
 
 fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic {
     let (w, h) = img.dimensions();
