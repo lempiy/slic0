@@ -26,6 +26,19 @@ struct AvgValues {
   distances: u32,
 }
 
+struct ConnectedPixels {
+    target: ConnectedPixel,
+    prev: Option<ConnectedPixel>,
+    top: Option<ConnectedPixel>
+}
+
+struct ConnectedPixel {
+    x: u32,
+    y: u32,
+    label: usize,
+    label_index: usize
+}
+
 const threshold: f64 = MAX;
 
 struct Slic<'a> {
@@ -116,18 +129,48 @@ impl Slic<'_> {
     let h = self.img.height();
     for y in 0..h {
       for x in 0..w {
-        let label_idx = self.get_label_index(x, y).expect("Index out of range");
-        let label = self.labels[label_idx] as usize - 1;
+        let step = self.get_prev_top_and_center_pixel_label(x, y);
+          
       }
     }
   }
 
-  fn get_pixel_label(&self, x: u32, y: u32) -> Option<usize> {
 
+  // get_prev_top_and_center_pixel
+  // 0x0
+  // xx0
+  // 000
+  fn get_prev_top_and_center_pixel_label(&self, x: u32, y: u32) ->ConnectedPixels {
+      let target = self.get_pixel_label(x, y).expect("Target pixel out of range");
+      let prev = if x != 0 {self.get_pixel_label(x -1, y)} else {
+          None
+      };
+      let top = if y != 0 { self.get_pixel_label(x, y-1) } else {
+          None
+      };
+      ConnectedPixels{
+          target,
+          prev,
+          top,
+      }
+  }
+
+  fn get_pixel_label(&self, x: u32, y: u32) -> Option<ConnectedPixel> {
+      if let Some(label_index) = self.get_label_index(x, y) {
+          let label = self.labels[label_idx] as usize - 1;
+          Some(ConnectedPixel{
+              x,
+              y,
+              label,
+              label_index
+          })
+      } else {
+          None
+      }
   }
 
   fn get_label_index(&self, x: u32, y: u32)-> Option<usize> {
-    if x >= self.img.Width() {
+    if x >= self.img.width() {
       return None
     }
     if y >= self.img.height() {
