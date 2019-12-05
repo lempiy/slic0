@@ -94,6 +94,31 @@ fn slic_run_works() {
     }
   });
   println!("E: {}", e4);
+  assert_eq!(true, true);
+}
+
+#[test]
+fn slic_enforce_works() {
+  let mut image = open("./fixture/test.jpg")
+    .ok().expect("Cannot open image");
+
+  let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
+
+  let mut slic = get_slic(img, 9, 10.0);
+
+  slic.run();
+  slic.recompute_centers();
+  slic.run();
+  slic.recompute_centers();
+  slic.run();
+  slic.recompute_centers();
+  slic.labels.iter().enumerate().for_each(|(i, x)| {
+    print!("{}", *x);
+    if ((i+1) % 200) == 0 {
+      println!();
+    }
+  });
+  slic.enforce_connectivity();
   assert_eq!(false, true);
 }
 

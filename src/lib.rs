@@ -7,8 +7,10 @@ use std::f64::MAX;
 use std::cmp::min;
 use std::marker::{Copy};
 use std::borrow::BorrowMut;
+use std::collections::{HashMap, HashSet};
 
 pub mod lab;
+pub mod connectivity;
 
 #[derive(Copy, Clone)]
 struct SuperPixel {
@@ -127,12 +129,139 @@ impl Slic<'_> {
   fn enforce_connectivity(&mut self) {
     let w = self.img.width();
     let h = self.img.height();
+    let mut state = connectivity::create_new_state(self.labels.len());
+    let mut centroids = self.super_pixels.iter()
+      .fold(HashSet::new(), |mut set, sp| {
+      set.insert((sp.centroid.0, sp.centroid.1));
+      set
+    });
+    // connection components row-by-row
     for y in 0..h {
       for x in 0..w {
+        let is_centroid = centroids.contains(&(x, y));
         let step = self.get_prev_top_and_center_pixel_label(x, y);
-          
+        let target = step.target;
+        // ?xx
+        // xxx
+        // xxx
+        if step.top.is_none() && step.prev.is_none() {
+          // 1xx
+          // xxx
+          // xxx
+          state.new_relation();
+          state.set_pixel_state(target.label_index, (target.label, state.order));
+          continue;
+        }
+        // 0xx
+        // ?xx
+        // xxx
+        if step.top.is_some() && step.prev.is_none() {
+          let top = step.top.expect("top pixel is None");
+          let (top_label, top_order) = state.get_pixel_state(top.label_index);
+          // 1xx
+          // 1xx
+          // xxx
+          if top_label == target.label {
+            state.set_pixel_state(target.label_index, (top_label, top_order));
+          // 1xx
+          // 2xx
+          // xxx
+          } else {
+            state.new_relation();
+            state.set_pixel_state(target.label_index, (target.label, state.order));
+          }
+          continue;
+        }
+        // 0?x
+        // xxx
+        // xxx
+        if step.top.is_none() && step.prev.is_some() {
+          let prev = step.prev.expect("prev pixel is None");
+          let (prev_label, prev_order) = state.get_pixel_state(prev.label_index);
+          // 11x
+          // xxx
+          // xxx
+          if prev_label == target.label {
+            state.set_pixel_state(target.label_index, (prev_label, prev_order));
+          // 12x
+          // xxx
+          // xxx
+          } else {
+            state.new_relation();
+            state.set_pixel_state(target.label_index, (target.label, state.order));
+          }
+          continue;
+        }
+        // x0x
+        // 0?x
+        // xxx
+        if step.top.is_some() && step.prev.is_some() {
+          let top = step.top.expect("top pixel is None");
+          let prev = step.prev.expect("prev pixel is None");
+          let (prev_label, prev_order) = state.get_pixel_state(prev.label_index);
+          let (top_label, top_order) = state.get_pixel_state(top.label_index);
+          // x1x
+          // 1?x
+          // xxx
+          if top_order == prev_order {
+            // x1x
+            // 11x
+            // xxx
+            if top_label == target.label {
+              state.set_pixel_state(target.label_index, (top_label, top_order));
+            // x1x
+            // 12x
+            // xxx
+            } else {
+              state.new_relation();
+              state.set_pixel_state(target.label_index, (target.label, state.order));
+            }
+          // x1x
+          // 2?x
+          // xxx
+          } else {
+            // x1x
+            // 11x
+            // xxx
+            if top_label == target.label && prev_label == target.label {
+              state.set_pixel_state(target.label_index, (top_label, top_order));
+              state.set_equality(prev_order, top_order);
+            // x1x
+            // 21x
+            // xxx
+            } else if top_label == target.label {
+              state.set_pixel_state(target.label_index, (top_label, top_order));
+            // x1x
+            // 22x
+            // xxx
+            } else if prev_label == target.label {
+              state.set_pixel_state(target.label_index, (prev_label, prev_order));
+            // x1x
+            // 23x
+            // xxx
+            } else {
+              state.new_relation();
+              state.set_pixel_state(target.label_index, (target.label, state.order));
+            }
+          }
+          continue;
+        }
       }
     }
+    let mut hashes = HashSet::new();
+    println!("-------------------------------------------------------------");
+
+    state.state.iter().enumerate().for_each(|(i, x)| {
+      let equal = state.resolve_equality(x.1);
+      print!("{number:>width$}", number=equal, width=4);
+      hashes.insert(equal);
+      if ((i+1) % 200) == 0 {
+        println!();
+      }
+    });
+    println!("-------------------------------------------------------------");
+    println!("hashes.len: {}", hashes.len());
+    println!("-------------------------------------------------------------");
   }
 
 
@@ -157,7 +286,7 @@ impl Slic<'_> {
 
   fn get_pixel_label(&self, x: u32, y: u32) -> Option<ConnectedPixel> {
       if let Some(label_index) = self.get_label_index(x, y) {
-          let label = self.labels[label_idx] as usize - 1;
+          let label = self.labels[label_index] as usize - 1;
           Some(ConnectedPixel{
               x,
               y,
