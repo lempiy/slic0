@@ -8,6 +8,7 @@ use std::cmp::min;
 use std::marker::{Copy};
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::RandomState;
 
 pub mod lab;
 pub mod connectivity;
@@ -169,6 +170,7 @@ impl Slic<'_> {
           } else {
             state.new_relation();
             state.set_pixel_state(target.label_index, (target.label, state.order));
+            state.mark_neighbours(state.order, top_order);
           }
           continue;
         }
@@ -189,6 +191,7 @@ impl Slic<'_> {
           } else {
             state.new_relation();
             state.set_pixel_state(target.label_index, (target.label, state.order));
+            state.mark_neighbours(state.order, prev_order);
           }
           continue;
         }
@@ -215,6 +218,7 @@ impl Slic<'_> {
             } else {
               state.new_relation();
               state.set_pixel_state(target.label_index, (target.label, state.order));
+              state.mark_neighbours(state.order, prev_order);
             }
           // x1x
           // 2?x
@@ -231,37 +235,64 @@ impl Slic<'_> {
             // xxx
             } else if top_label == target.label {
               state.set_pixel_state(target.label_index, (top_label, top_order));
+              state.mark_neighbours(state.order, prev_order);
             // x1x
             // 22x
             // xxx
             } else if prev_label == target.label {
               state.set_pixel_state(target.label_index, (prev_label, prev_order));
+              state.mark_neighbours(state.order, top_order);
             // x1x
             // 23x
             // xxx
             } else {
               state.new_relation();
               state.set_pixel_state(target.label_index, (target.label, state.order));
+              state.mark_neighbours(state.order, prev_order);
+              state.mark_neighbours(state.order, top_order);
             }
           }
           continue;
         }
       }
     }
-    let mut hashes = HashSet::new();
+    let mut segments: HashMap<usize, HashSet<u32, RandomState>, RandomState> = HashMap::new();
+    let mut avg: HashMap<u32, (u32, u32, u32), RandomState> = HashMap::new();
     println!("-------------------------------------------------------------");
 
-    state.state.iter().enumerate().for_each(|(i, x)| {
+    state.state = state.state.iter().enumerate().map(|(i, x)| {
       let equal = state.resolve_equality(x.1);
+      let x = i as u32 % self.img.width();
+      let y = i as u32 / self.img.width();
       print!("{number:>width$}", number=equal, width=4);
-      hashes.insert(equal);
+      if let Some(segment) = segments.get_mut(&x.0) {
+        segment.insert(equal);
+      } else {
+        let mut sub_segments = HashSet::new();
+        sub_segments.insert(equal);
+        segments.insert(x.0,sub_segments);
+      };
+      if let Some((vx, vy, counter)) = avg.get(&equal) {
+        avg.insert(equal, (*vx+x, *vy+y, *counter+1));
+      } else {
+        avg.insert(equal, (x, y, 1));
+      };
       if ((i+1) % 200) == 0 {
         println!();
-      }
+      };
+      (x.0, equal)
+    }).collect();
+    println!("-------------------------------------------------------------");
+    println!("segments.len: {}", segments.len());
+    println!("{:?}", segments);
+    println!("-------------------------------------------------------------");
+    println!("{:?}", segments_count);
+    println!("-------------------------------------------------------------");
+    println!("{:?}", state.neighbours);
+    println!("+++------------------------------------------------------+++");
+    segments.iter().for_each(|(a, b)| {
+      println!("{}: {}", a, b.len());
     });
-    println!("-------------------------------------------------------------");
-    println!("hashes.len: {}", hashes.len());
-    println!("-------------------------------------------------------------");
   }
 
 

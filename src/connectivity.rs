@@ -1,10 +1,11 @@
-use std::collections::{HashMap, BTreeSet};
+use std::collections::{HashMap, BTreeSet, HashSet};
 
 pub fn create_new_state(state_length: usize) -> ConnectedComponentState {
   ConnectedComponentState{
     order: 0,
     relations: HashMap::new(),
     equality_relations: HashMap::new(),
+    neighbours: HashMap::new(),
     state: vec![(0,0); state_length],
   }
 }
@@ -13,15 +14,14 @@ pub struct ConnectedComponentState {
   pub order: u32,
   equality_relations: HashMap<u32,u32>,
   relations: HashMap<u32,ConnectedComponentRelation>,
+  pub neighbours:  HashMap<u32, HashSet<u32>>,
   pub state: Vec<(usize,u32)>,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug)]
 struct ConnectedComponentRelation {
   equality: u32,
-  neighbours: BTreeSet<u32>,
   centroid: Option<(u32,u32)>,
-  start_pixel: (u32, u32)
 }
 
 macro_rules! get_or_create_relation {
@@ -31,9 +31,7 @@ macro_rules! get_or_create_relation {
       } else {
         $relations.insert($order, ConnectedComponentRelation{
           equality: $order,
-          neighbours: BTreeSet::new(),
           centroid: None,
-          start_pixel: (0, 0),
         });
         $relations.get_mut(&$order).expect("new value not found")
       }
@@ -71,6 +69,19 @@ impl ConnectedComponentState {
       }
     };
     result
+  }
+  pub fn mark_neighbours(&mut self, a: u32, b: u32) {
+    self.mark_neighbour(a, b);
+    self.mark_neighbour(b, a);
+  }
+  fn mark_neighbour(&mut self, key: u32, value: u32) {
+    if let Some(set) = self.neighbours.get_mut(&key) {
+      set.insert(value);
+    } else {
+      let mut set = HashSet::new();
+      set.insert(value);
+      self.neighbours.insert(key, set);
+    }
   }
   pub fn debug(&self) {
     println!("{:?}", self.relations);
