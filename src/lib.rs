@@ -262,8 +262,8 @@ impl Slic<'_> {
 
     state.state = state.state.iter().enumerate().map(|(i, x)| {
       let equal = state.resolve_equality(x.1);
-      let x = i as u32 % self.img.width();
-      let y = i as u32 / self.img.width();
+      let tx = i as u32 % self.img.width();
+      let ty = i as u32 / self.img.width();
       print!("{number:>width$}", number=equal, width=4);
       if let Some(segment) = segments.get_mut(&x.0) {
         segment.insert(equal);
@@ -273,22 +273,34 @@ impl Slic<'_> {
         segments.insert(x.0,sub_segments);
       };
       if let Some((vx, vy, counter)) = avg.get(&equal) {
-        avg.insert(equal, (*vx+x, *vy+y, *counter+1));
+        avg.insert(equal, (*vx+tx, *vy+ty, *counter+1));
       } else {
-        avg.insert(equal, (x, y, 1));
+        avg.insert(equal, (tx, ty, 1));
       };
       if ((i+1) % 200) == 0 {
         println!();
       };
       (x.0, equal)
     }).collect();
+    state.state = state.state.iter().enumerate().map(|(i, x)| {
+      let equals = segments.get_mut(&x.0).expect("not found");
+      let (_, biggest_segment, bcx, bcy) = equals.iter()
+        .fold((0u32, 0, 0u32, 0u32), |(max, biggest_segment,ox, oy), seg| {
+          let (x, y, count) = avg.get(seg).expect("not found avg");
+          if *count > max { (*count, *seg, *x / *count, *y / *count) } else { (max, biggest_segment, ox, oy) }
+      });
+      if x.1 != biggest_segment {
+        // get data from `state.neighbours`
+        // assign to closest neighbour
+      };
+
+    }).collect();
+
     println!("-------------------------------------------------------------");
     println!("segments.len: {}", segments.len());
     println!("{:?}", segments);
     println!("-------------------------------------------------------------");
-    println!("{:?}", segments_count);
-    println!("-------------------------------------------------------------");
-    println!("{:?}", state.neighbours);
+    println!("{:?}", avg);
     println!("+++------------------------------------------------------+++");
     segments.iter().for_each(|(a, b)| {
       println!("{}: {}", a, b.len());
