@@ -57,6 +57,7 @@ struct Slic<'a> {
     super_pixel_height: u32,
     compactness: f64,
     super_pixels: Vec<SuperPixel>,
+    compactnesses: Vec<f64>,
     distances: Vec<f64>,
     labels: Vec<i64>,
     img: &'a RgbImage,
@@ -65,7 +66,7 @@ struct Slic<'a> {
 impl Slic<'_> {
     fn run(&mut self) {
         let offset = (self.s).ceil() as u32;
-        self.super_pixels.clone().into_iter().for_each(|pxl| {
+        self.super_pixels.clone().into_iter().for_each(|mut pxl| {
             let (cx, cy, center_color) = pxl.centroid;
             let x1 = if cx > offset { cx - offset } else { 0 };
             let y1 = if cy > offset { cy - offset } else { 0 };
@@ -79,13 +80,22 @@ impl Slic<'_> {
             } else {
                 self.img.height() - 1
             };
+            let i = (pxl.label - 1) as usize;
+            let compactness = self.compactnesses[i];
+            self.compactnesses[i] = 0.0;
             for y in y1..(y2 + 1) {
                 for x in x1..(x2 + 1) {
                     let idx = (y * self.img.width() + x) as usize;
                     let prev_distance = self.distances[idx];
                     // calc distance
                     let pixel = get_lab_pixel(self.img, x, y);
-                    let new_distance = get_distance(pxl.centroid, pixel, self.compactness, self.s);
+
+                    let (color_distance, new_distance) =
+                      get_distance(pxl.centroid, pixel, compactness, self.s);
+                    let compactness_ratio =  f64::min(0.2 * color_distance, 20.0);
+                    if self.compactnesses[i] < compactness_ratio {
+                        self.compactnesses[i] = compactness_ratio;
+                    };
                     if prev_distance > new_distance {
                         self.distances[idx] = new_distance;
                         self.labels[idx] = pxl.label as i64;
@@ -264,6 +274,7 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic 
         compactness,
         super_pixels,
         distances: vec![MAX; n as usize],
+        compactnesses: vec![compactness; k as usize],
         labels: vec![-1; n as usize],
         img,
     }
@@ -421,13 +432,16 @@ fn get_spacial_distance(p1: (u32, u32), p2: (u32, u32)) -> f64 {
     )
 }
 
-fn get_distance(p1: LabPixel, p2: LabPixel, m: f64, S: f64) -> f64 {
+fn get_distance(p1: LabPixel, p2: LabPixel, m: f64, S: f64) -> (f64, f64) {
     let (p1x, p1y, color_p1) = p1;
     let (p2x, p2y, color_p2) = p2;
-    half_up(
-        get_color_distance(color_p1, color_p2)
-            + m / S * get_spacial_distance((p1x, p1y), (p2x, p2y)),
-        4,
+    let color_distance = get_color_distance(color_p1, color_p2);
+    (
+        color_distance,
+        half_up(
+            color_distance + m / S * get_spacial_distance((p1x, p1y), (p2x, p2y)),
+            4,
+        ),
     )
 }
 

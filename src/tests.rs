@@ -104,7 +104,7 @@ fn slic_enforce_works() {
 
   let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
 
-  let mut slic = get_slic(img, 9, 10.0);
+  let mut slic = get_slic(img, 20, 10.0);
 
   slic.run();
   slic.recompute_centers();
@@ -112,20 +112,22 @@ fn slic_enforce_works() {
   slic.recompute_centers();
   slic.run();
   slic.recompute_centers();
-  slic.labels.iter().enumerate().for_each(|(i, x)| {
-    print!("{}", *x);
-    if ((i+1) % 200) == 0 {
-      println!();
-    }
-  });
+  slic.run();
+  slic.recompute_centers();
+  slic.run();
+  slic.recompute_centers();
+  slic.run();
+  let e = slic.recompute_centers();
+  println!("e: {}", e);
 
   let lbls = slic.enforce_connectivity();
     lbls.iter().enumerate().for_each(|(i, x)| {
-      print!("{}", if *x == 10 { "X".to_string() } else { format!("{}", *x) });
+      print!("{}", if *x > 9 {((55 + *x) as u8 as char).to_string()} else { format!("{}", *x) });
       if ((i+1) % 200) == 0 {
           println!();
       }
   });
+  println!("get_color_distance {}", get_color_distance([0.0, 0.0, 0.0], [100.0, 0.0, 0.0]));
   assert_eq!(false, true);
 }
 
