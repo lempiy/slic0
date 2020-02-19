@@ -118,7 +118,14 @@ fn slic_enforce_works() {
       println!();
     }
   });
-  slic.enforce_connectivity();
+
+  let lbls = slic.enforce_connectivity();
+    lbls.iter().enumerate().for_each(|(i, x)| {
+      print!("{}", if *x == 10 { "X".to_string() } else { format!("{}", *x) });
+      if ((i+1) % 200) == 0 {
+          println!();
+      }
+  });
   assert_eq!(false, true);
 }
 

@@ -2,17 +2,17 @@ extern crate math;
 use crate::lab::{rgb_2_lab, sub, LabColor};
 use image::{Pixel, Pixels, RgbImage};
 use math::round::half_up;
-use std::boxed::Box;
-use std::f64::MAX;
-use std::u32::{MAX as U32_MAX};
-use std::cmp::min;
-use std::marker::{Copy};
 use std::borrow::BorrowMut;
-use std::collections::{HashMap, HashSet};
+use std::boxed::Box;
+use std::cmp::min;
 use std::collections::hash_map::RandomState;
+use std::collections::{HashMap, HashSet};
+use std::f64::MAX;
+use std::marker::Copy;
+use std::u32::MAX as U32_MAX;
 
-pub mod lab;
 pub mod connectivity;
+pub mod lab;
 
 #[derive(Copy, Clone)]
 struct SuperPixel {
@@ -21,29 +21,31 @@ struct SuperPixel {
 }
 
 struct AvgValues {
-  l: Vec<f64>,
-  a: Vec<f64>,
-  b: Vec<f64>,
-  x: Vec<f64>,
-  y: Vec<f64>,
-  count: Vec<f64>,
-  distances: u32,
+    l: Vec<f64>,
+    a: Vec<f64>,
+    b: Vec<f64>,
+    x: Vec<f64>,
+    y: Vec<f64>,
+    count: Vec<f64>,
+    distances: u32,
 }
 
 struct ConnectedPixels {
     target: ConnectedPixel,
     prev: Option<ConnectedPixel>,
-    top: Option<ConnectedPixel>
+    top: Option<ConnectedPixel>,
 }
 
 struct ConnectedPixel {
     x: u32,
     y: u32,
     label: usize,
-    label_index: usize
+    label_index: usize,
 }
 
 const threshold: f64 = MAX;
+const x_mtx: [i32; 4] = [-1, 0, 1, 0];
+const y_mtx: [i32; 4] = [0, -1, 0, 1];
 
 struct Slic<'a> {
     k: u32,
@@ -64,186 +66,169 @@ impl Slic<'_> {
     fn run(&mut self) {
         let offset = (self.s).ceil() as u32;
         self.super_pixels.clone().into_iter().for_each(|pxl| {
-          let (cx, cy, center_color) = pxl.centroid;
-          let x1 = if cx > offset { cx - offset } else { 0 };
-          let y1 = if cy > offset { cy - offset } else { 0 };
-          let x2 = if cx + offset < self.img.width() { cx + offset } else { self.img.width() - 1};
-          let y2 = if cy + offset < self.img.height() { cy + offset } else { self.img.height() - 1};
-          for y in y1..(y2+1) {
-            for x in x1..(x2+1) {
-              let idx = (y * self.img.width() + x) as usize;
-              let prev_distance = self.distances[idx];
-              // calc distance
-              let pixel = get_lab_pixel(self.img, x, y);
-              let new_distance = get_distance(pxl.centroid, pixel, self.compactness, self.s);
-              if prev_distance > new_distance {
-                self.distances[idx] = new_distance;
-                self.labels[idx] = pxl.label as i64;
-              };
+            let (cx, cy, center_color) = pxl.centroid;
+            let x1 = if cx > offset { cx - offset } else { 0 };
+            let y1 = if cy > offset { cy - offset } else { 0 };
+            let x2 = if cx + offset < self.img.width() {
+                cx + offset
+            } else {
+                self.img.width() - 1
+            };
+            let y2 = if cy + offset < self.img.height() {
+                cy + offset
+            } else {
+                self.img.height() - 1
+            };
+            for y in y1..(y2 + 1) {
+                for x in x1..(x2 + 1) {
+                    let idx = (y * self.img.width() + x) as usize;
+                    let prev_distance = self.distances[idx];
+                    // calc distance
+                    let pixel = get_lab_pixel(self.img, x, y);
+                    let new_distance = get_distance(pxl.centroid, pixel, self.compactness, self.s);
+                    if prev_distance > new_distance {
+                        self.distances[idx] = new_distance;
+                        self.labels[idx] = pxl.label as i64;
+                    };
+                }
             }
-          }
         });
     }
 
-  fn recompute_centers(&mut self)-> u32 {
-    let w = self.img.width();
-    let h = self.img.height();
-    let k = self.k as usize;
-    let mut values = AvgValues{
-      l: vec![0.0; k],
-      a: vec![0.0; k],
-      b: vec![0.0; k],
-      x: vec![0.0; k],
-      y: vec![0.0; k],
-      count: vec![0.0; k],
-      distances: 0,
-    };
-    for y in 0..h {
-      for x in 0..w {
-        let label_idx = (y * w + x) as usize;
-        let label = self.labels[label_idx] as usize - 1;
-        self.distances[label] = MAX;
-        let (x, y, color) = get_lab_pixel(self.img, x, y);
-        values.x[label] += x as f64;
-        values.y[label] += y as f64;
-        values.l[label] += color[0];
-        values.a[label] += color[1];
-        values.b[label] += color[2];
-        values.count[label] += 1.0;
-      }
-    }
-    self.super_pixels.iter_mut().for_each(|super_pixel| {
-      let label = super_pixel.label as usize - 1;
-      let (cx, cy, _) = super_pixel.centroid;
-      let count = values.count[label];
-      let l = half_up((values.l[label] / count), 4);
-      let a = half_up((values.a[label] / count), 4);
-      let b = half_up((values.b[label] / count), 4);
-      let x = (values.x[label] / count).round() as u32;
-      let y = (values.y[label] / count).round() as u32;
-      let distance = l1_distance(cx, cy, x, y);
-      values.distances += distance;
-      super_pixel.centroid = (x, y, [l, a, b]);
-      println!("({} {}) label {} x {} y {} R {} G {} B {} distance {}", cx, cy, label + 1, x, y, l, a, b, distance);
-    });
-    values.distances /  self.k
-  }
-
-  fn enforce_connectivity(&self) -> (Vec<u32>) {
-    let w = self.img.width() as i32;
-    let h = self.img.height() as i32;
-    let size = w * h;
-    let target_supsz = size / (self.super_pixel_height * self.super_pixel_width) as i32;
-    let supsz = size / target_supsz;
-
-    let dx4: [i32; 4] = [-1, 0, 1, 0];
-    let dy4: [i32; 4] = [0, -1, 0, 1];
-
-    let mut xvec = vec![0i32; sz];
-    let mut yvec = vec![0i32; sz];
-
-    let (mut oindex, mut adjlabel, mut label) = (0usize, 0usize, 0u32);
-
-    let mut nlabels:Vec<u32> = vec![U32_MAX; sz as usize];
-
-    for j in 0..h {
-      for k in 0..w {
-        if nlabels[oindex] != U32_MAX {
-          nlabels[oindex] = label;
-
-          xvec[0] = k;
-          yvec[0] = j;
-          for n in 0usize..4 {
-            let (x, y) = (xvec[0] as i32 + dx4[n], yvec[0] as i32 + dy4[n]);
-            if (x >= 0 && x < w as i32) && (y >= 0 && y < h as i32) {
-              let nindex = y  *w + x;
-              if nlabels[nindex] >= 0 {
-                adjlabel = nlabels[nindex]
-              }
+    fn recompute_centers(&mut self) -> u32 {
+        let w = self.img.width();
+        let h = self.img.height();
+        let k = self.k as usize;
+        let mut values = AvgValues {
+            l: vec![0.0; k],
+            a: vec![0.0; k],
+            b: vec![0.0; k],
+            x: vec![0.0; k],
+            y: vec![0.0; k],
+            count: vec![0.0; k],
+            distances: 0,
+        };
+        for y in 0..h {
+            for x in 0..w {
+                let label_idx = (y * w + x) as usize;
+                let label = self.labels[label_idx] as usize - 1;
+                self.distances[label] = MAX;
+                let (x, y, color) = get_lab_pixel(self.img, x, y);
+                values.x[label] += x as f64;
+                values.y[label] += y as f64;
+                values.l[label] += color[0];
+                values.a[label] += color[1];
+                values.b[label] += color[2];
+                values.count[label] += 1.0;
             }
-          }
-
-          let (mut c, mut count) = (0, 1);
-          while c < count {
-            for n in 0..4 {
-              let x = xvec[c] + dx4[n];
-              let y = yvec[c] + dy4[n];
-
-              if (x >= 0 && x < w) && (y >= 0 && y < h) {
-                let nindex = y*w + x;
-
-                if nlabels[oindex] == U32_MAX && self.labels[oindex] ==  self.labels[nindex] {
-                  xvec[count] = x;
-                  yvec[count] = y;
-                  nlabels[nindex] = label;
-                  count+=1;
-                }
-              }
-              c+=1;
-            }
-          }
-
-          if count <= supsz as usize >> 2  {
-            for i in 0..count {
-              let ind = yvec[i]*width + xvec[i];
-              nlabels[ind] = adjlabel
-            }
-            label-=1;
-          }
-          label+=1;
         }
-      }
-      oindex+=1;
+        self.super_pixels.iter_mut().for_each(|super_pixel| {
+            let label = super_pixel.label as usize - 1;
+            let (cx, cy, _) = super_pixel.centroid;
+            let count = values.count[label];
+            let l = half_up((values.l[label] / count), 4);
+            let a = half_up((values.a[label] / count), 4);
+            let b = half_up((values.b[label] / count), 4);
+            let x = (values.x[label] / count).round() as u32;
+            let y = (values.y[label] / count).round() as u32;
+            let distance = l1_distance(cx, cy, x, y);
+            values.distances += distance;
+            super_pixel.centroid = (x, y, [l, a, b]);
+        });
+        values.distances / self.k
     }
-    return nlabels
-  }
 
+    fn enforce_connectivity(&self) -> (Vec<i32>) {
+        let (w, h) = (self.img.width() as i32, self.img.height() as i32);
+        let image_size = w * h;
+        let super_pixels_count =
+            image_size / (self.super_pixel_height * self.super_pixel_width) as i32;
+        let (super_pixel_size, image_size_usize) =
+            (image_size / super_pixels_count, image_size as usize);
+        let (mut x_coords, mut y_coords) =
+            (vec![0i32; image_size_usize], vec![0i32; image_size_usize]);
+        let (mut main_index, mut adjust_label, mut label) = (0usize, 1i32, 1i32);
+        let mut merged_labels: Vec<i32> = vec![0; image_size_usize];
+        // connected components row-by-row
+        for j in 0..h {
+            for k in 0..w {
+                if 0 == merged_labels[main_index] {
+                    merged_labels[main_index] = label;
 
-  // get_prev_top_and_center_pixel
-  // 0x0
-  // xx0
-  // 000
-  fn get_prev_top_and_center_pixel_label(&self, x: u32, y: u32) ->ConnectedPixels {
-      let target = self.get_pixel_label(x, y).expect("Target pixel out of range");
-      let prev = if x != 0 {self.get_pixel_label(x -1, y)} else {
-          None
-      };
-      let top = if y != 0 { self.get_pixel_label(x, y-1) } else {
-          None
-      };
-      ConnectedPixels{
-          target,
-          prev,
-          top,
-      }
-  }
+                    x_coords[0] = k;
+                    y_coords[0] = j;
+                    // find adjust label
+                    for n in 0usize..4 {
+                        let x = x_coords[0] as i32 + x_mtx[n];
+                        let y = y_coords[0] as i32 + y_mtx[n];
+                        if (x >= 0 && x < w) && (y >= 0 && y < h) {
+                            let sub_index = (y * w + x) as usize;
+                            if merged_labels[sub_index] > 0 {
+                                adjust_label = merged_labels[sub_index]
+                            }
+                        }
+                    }
+                    // collect super_pixel, save its real pixel coords into buffer vectors
+                    let (mut o, mut order) = (0, 1);
+                    while o < order {
+                        for n in 0..4 {
+                            let x = x_coords[o] + x_mtx[n];
+                            let y = y_coords[o] + y_mtx[n];
 
-  fn get_pixel_label(&self, x: u32, y: u32) -> Option<ConnectedPixel> {
-      if let Some(label_index) = self.get_label_index(x, y) {
-          let label = self.labels[label_index] as usize - 1;
-          Some(ConnectedPixel{
-              x,
-              y,
-              label,
-              label_index
-          })
-      } else {
-          None
-      }
-  }
-
-  fn get_label_index(&self, x: u32, y: u32)-> Option<usize> {
-    if x >= self.img.width() {
-      return None
+                            if (x >= 0 && x < w) && (y >= 0 && y < h) {
+                                let sub_index = (y * w + x) as usize;
+                                if 0 == merged_labels[sub_index]
+                                    && self.labels[main_index] == self.labels[sub_index]
+                                {
+                                    x_coords[order] = x;
+                                    y_coords[order] = y;
+                                    merged_labels[sub_index] = label;
+                                    order += 1;
+                                }
+                            }
+                        }
+                        o += 1;
+                    }
+                    // filter super_pixels above threshold, assign them to adjust labels using buffer vectors
+                    if order as i32 <= super_pixel_size >> 2 {
+                        for o in 0..order {
+                            let ind = (y_coords[o] * w + x_coords[o]) as usize;
+                            merged_labels[ind] = adjust_label
+                        }
+                        label -= 1;
+                    }
+                    label += 1;
+                }
+                main_index += 1;
+            }
+        }
+        return merged_labels;
     }
-    if y >= self.img.height() {
-      return None
+
+    fn get_pixel_label(&self, x: u32, y: u32) -> Option<ConnectedPixel> {
+        if let Some(label_index) = self.get_label_index(x, y) {
+            let label = self.labels[label_index] as usize - 1;
+            Some(ConnectedPixel {
+                x,
+                y,
+                label,
+                label_index,
+            })
+        } else {
+            None
+        }
     }
-    Some((y * self.img.width() + x) as usize)
-  }
+
+    fn get_label_index(&self, x: u32, y: u32) -> Option<usize> {
+        if x >= self.img.width() {
+            return None;
+        }
+        if y >= self.img.height() {
+            return None;
+        }
+        Some((y * self.img.width() + x) as usize)
+    }
 }
-
-
 
 fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic {
     let (w, h) = img.dimensions();
@@ -430,7 +415,8 @@ fn get_spacial_distance(p1: (u32, u32), p2: (u32, u32)) -> f64 {
     let (p1x, p1y) = p1;
     let (p2x, p2y) = p2;
     half_up(
-        (((p1x as i64 - p2x as i64) as f64).powi(2) + ((p1y as i64 - p2y as i64) as f64).powi(2)).sqrt(),
+        (((p1x as i64 - p2x as i64) as f64).powi(2) + ((p1y as i64 - p2y as i64) as f64).powi(2))
+            .sqrt(),
         4,
     )
 }
