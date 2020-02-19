@@ -7,6 +7,7 @@ pub fn create_new_state(state_length: usize) -> ConnectedComponentState {
     equality_relations: HashMap::new(),
     neighbours: HashMap::new(),
     state: vec![(0,0); state_length],
+    sub_segments_to_segments: HashMap::new(),
   }
 }
 
@@ -16,6 +17,7 @@ pub struct ConnectedComponentState {
   relations: HashMap<u32,ConnectedComponentRelation>,
   pub neighbours:  HashMap<u32, HashSet<u32>>,
   pub state: Vec<(usize,u32)>,
+  sub_segments_to_segments: HashMap<u32,usize>,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug)]
@@ -52,6 +54,7 @@ impl ConnectedComponentState {
   }
   pub fn set_pixel_state(&mut self, label_index: usize, state: (usize, u32)) {
     self.state[label_index] = state;
+    self.sub_segments_to_segments.insert(state.1, state.0);
   }
 
   pub fn get_pixel_state(&self, label_index: usize) -> (usize, u32) {
@@ -69,6 +72,9 @@ impl ConnectedComponentState {
       }
     };
     result
+  }
+  pub fn resolve_segment_from_sub_segment(&self, order: u32) -> (usize) {
+    *self.sub_segments_to_segments.get(&order).expect("cannot find order in sub segments table")
   }
   pub fn mark_neighbours(&mut self, a: u32, b: u32) {
     self.mark_neighbour(a, b);

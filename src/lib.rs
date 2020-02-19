@@ -4,6 +4,7 @@ use image::{Pixel, Pixels, RgbImage};
 use math::round::half_up;
 use std::boxed::Box;
 use std::f64::MAX;
+use std::u32::{MAX as U32_MAX};
 use std::cmp::min;
 use std::marker::{Copy};
 use std::borrow::BorrowMut;
@@ -127,184 +128,74 @@ impl Slic<'_> {
     });
     values.distances /  self.k
   }
-  fn enforce_connectivity(&mut self) {
-    let w = self.img.width();
-    let h = self.img.height();
-    let mut state = connectivity::create_new_state(self.labels.len());
-    let mut centroids = self.super_pixels.iter()
-      .fold(HashSet::new(), |mut set, sp| {
-      set.insert((sp.centroid.0, sp.centroid.1));
-      set
-    });
-    // connection components row-by-row
-    for y in 0..h {
-      for x in 0..w {
-        let is_centroid = centroids.contains(&(x, y));
-        let step = self.get_prev_top_and_center_pixel_label(x, y);
-        let target = step.target;
-        // ?xx
-        // xxx
-        // xxx
-        if step.top.is_none() && step.prev.is_none() {
-          // 1xx
-          // xxx
-          // xxx
-          state.new_relation();
-          state.set_pixel_state(target.label_index, (target.label, state.order));
-          continue;
-        }
-        // 0xx
-        // ?xx
-        // xxx
-        if step.top.is_some() && step.prev.is_none() {
-          let top = step.top.expect("top pixel is None");
-          let (top_label, top_order) = state.get_pixel_state(top.label_index);
-          // 1xx
-          // 1xx
-          // xxx
-          if top_label == target.label {
-            state.set_pixel_state(target.label_index, (top_label, top_order));
-          // 1xx
-          // 2xx
-          // xxx
-          } else {
-            state.new_relation();
-            state.set_pixel_state(target.label_index, (target.label, state.order));
-            state.mark_neighbours(state.order, top_order);
-          }
-          continue;
-        }
-        // 0?x
-        // xxx
-        // xxx
-        if step.top.is_none() && step.prev.is_some() {
-          let prev = step.prev.expect("prev pixel is None");
-          let (prev_label, prev_order) = state.get_pixel_state(prev.label_index);
-          // 11x
-          // xxx
-          // xxx
-          if prev_label == target.label {
-            state.set_pixel_state(target.label_index, (prev_label, prev_order));
-          // 12x
-          // xxx
-          // xxx
-          } else {
-            state.new_relation();
-            state.set_pixel_state(target.label_index, (target.label, state.order));
-            state.mark_neighbours(state.order, prev_order);
-          }
-          continue;
-        }
-        // x0x
-        // 0?x
-        // xxx
-        if step.top.is_some() && step.prev.is_some() {
-          let top = step.top.expect("top pixel is None");
-          let prev = step.prev.expect("prev pixel is None");
-          let (prev_label, prev_order) = state.get_pixel_state(prev.label_index);
-          let (top_label, top_order) = state.get_pixel_state(top.label_index);
-          // x1x
-          // 1?x
-          // xxx
-          if top_order == prev_order {
-            // x1x
-            // 11x
-            // xxx
-            if top_label == target.label {
-              state.set_pixel_state(target.label_index, (top_label, top_order));
-            // x1x
-            // 12x
-            // xxx
-            } else {
-              state.new_relation();
-              state.set_pixel_state(target.label_index, (target.label, state.order));
-              state.mark_neighbours(state.order, prev_order);
-            }
-          // x1x
-          // 2?x
-          // xxx
-          } else {
-            // x1x
-            // 11x
-            // xxx
-            if top_label == target.label && prev_label == target.label {
-              state.set_pixel_state(target.label_index, (top_label, top_order));
-              state.set_equality(prev_order, top_order);
-            // x1x
-            // 21x
-            // xxx
-            } else if top_label == target.label {
-              state.set_pixel_state(target.label_index, (top_label, top_order));
-              state.mark_neighbours(state.order, prev_order);
-            // x1x
-            // 22x
-            // xxx
-            } else if prev_label == target.label {
-              state.set_pixel_state(target.label_index, (prev_label, prev_order));
-              state.mark_neighbours(state.order, top_order);
-            // x1x
-            // 23x
-            // xxx
-            } else {
-              state.new_relation();
-              state.set_pixel_state(target.label_index, (target.label, state.order));
-              state.mark_neighbours(state.order, prev_order);
-              state.mark_neighbours(state.order, top_order);
+
+  fn enforce_connectivity(&self) -> (Vec<u32>) {
+    let w = self.img.width() as i32;
+    let h = self.img.height() as i32;
+    let size = w * h;
+    let target_supsz = size / (self.super_pixel_height * self.super_pixel_width) as i32;
+    let supsz = size / target_supsz;
+
+    let dx4: [i32; 4] = [-1, 0, 1, 0];
+    let dy4: [i32; 4] = [0, -1, 0, 1];
+
+    let mut xvec = vec![0i32; sz];
+    let mut yvec = vec![0i32; sz];
+
+    let (mut oindex, mut adjlabel, mut label) = (0usize, 0usize, 0u32);
+
+    let mut nlabels:Vec<u32> = vec![U32_MAX; sz as usize];
+
+    for j in 0..h {
+      for k in 0..w {
+        if nlabels[oindex] != U32_MAX {
+          nlabels[oindex] = label;
+
+          xvec[0] = k;
+          yvec[0] = j;
+          for n in 0usize..4 {
+            let (x, y) = (xvec[0] as i32 + dx4[n], yvec[0] as i32 + dy4[n]);
+            if (x >= 0 && x < w as i32) && (y >= 0 && y < h as i32) {
+              let nindex = y  *w + x;
+              if nlabels[nindex] >= 0 {
+                adjlabel = nlabels[nindex]
+              }
             }
           }
-          continue;
+
+          let (mut c, mut count) = (0, 1);
+          while c < count {
+            for n in 0..4 {
+              let x = xvec[c] + dx4[n];
+              let y = yvec[c] + dy4[n];
+
+              if (x >= 0 && x < w) && (y >= 0 && y < h) {
+                let nindex = y*w + x;
+
+                if nlabels[oindex] == U32_MAX && self.labels[oindex] ==  self.labels[nindex] {
+                  xvec[count] = x;
+                  yvec[count] = y;
+                  nlabels[nindex] = label;
+                  count+=1;
+                }
+              }
+              c+=1;
+            }
+          }
+
+          if count <= supsz as usize >> 2  {
+            for i in 0..count {
+              let ind = yvec[i]*width + xvec[i];
+              nlabels[ind] = adjlabel
+            }
+            label-=1;
+          }
+          label+=1;
         }
       }
+      oindex+=1;
     }
-    let mut segments: HashMap<usize, HashSet<u32, RandomState>, RandomState> = HashMap::new();
-    let mut avg: HashMap<u32, (u32, u32, u32), RandomState> = HashMap::new();
-    println!("-------------------------------------------------------------");
-
-    state.state = state.state.iter().enumerate().map(|(i, x)| {
-      let equal = state.resolve_equality(x.1);
-      let tx = i as u32 % self.img.width();
-      let ty = i as u32 / self.img.width();
-      print!("{number:>width$}", number=equal, width=4);
-      if let Some(segment) = segments.get_mut(&x.0) {
-        segment.insert(equal);
-      } else {
-        let mut sub_segments = HashSet::new();
-        sub_segments.insert(equal);
-        segments.insert(x.0,sub_segments);
-      };
-      if let Some((vx, vy, counter)) = avg.get(&equal) {
-        avg.insert(equal, (*vx+tx, *vy+ty, *counter+1));
-      } else {
-        avg.insert(equal, (tx, ty, 1));
-      };
-      if ((i+1) % 200) == 0 {
-        println!();
-      };
-      (x.0, equal)
-    }).collect();
-    state.state = state.state.iter().enumerate().map(|(i, x)| {
-      let equals = segments.get_mut(&x.0).expect("not found");
-      let (_, biggest_segment, bcx, bcy) = equals.iter()
-        .fold((0u32, 0, 0u32, 0u32), |(max, biggest_segment,ox, oy), seg| {
-          let (x, y, count) = avg.get(seg).expect("not found avg");
-          if *count > max { (*count, *seg, *x / *count, *y / *count) } else { (max, biggest_segment, ox, oy) }
-      });
-      if x.1 != biggest_segment {
-        // get data from `state.neighbours`
-        // assign to closest neighbour
-      };
-
-    }).collect();
-
-    println!("-------------------------------------------------------------");
-    println!("segments.len: {}", segments.len());
-    println!("{:?}", segments);
-    println!("-------------------------------------------------------------");
-    println!("{:?}", avg);
-    println!("+++------------------------------------------------------+++");
-    segments.iter().for_each(|(a, b)| {
-      println!("{}: {}", a, b.len());
-    });
+    return nlabels
   }
 
 
