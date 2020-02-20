@@ -44,27 +44,37 @@ struct ConnectedPixel {
 }
 
 const threshold: f64 = MAX;
-const x_mtx: [i32; 4] = [-1, 0, 1, 0];
-const y_mtx: [i32; 4] = [0, -1, 0, 1];
+const x_mtx: [i64; 4] = [-1, 0, 1, 0];
+const y_mtx: [i64; 4] = [0, -1, 0, 1];
+const INITIAL_COMPACTNESS_SLIC_ZERO: f64 = 10.0;
+const RESIDUAL_ERROR_THRESHOLD: f64 = 0.0;
 
-struct Slic<'a> {
-    k: u32,
+pub struct Slic<'a> {
+    pub k: u32,
+    pub compactness: f64,
+    pub slic_zero_mode: bool,
+    pub labels: Vec<i64>,
+    pub img: &'a RgbImage,
     n: u32,
     s: f64,
     super_pixels_per_width: u32,
     super_pixel_width: u32,
     super_pixels_per_height: u32,
     super_pixel_height: u32,
-    compactness: f64,
     super_pixels: Vec<SuperPixel>,
     compactnesses: Vec<f64>,
     distances: Vec<f64>,
-    labels: Vec<i64>,
-    img: &'a RgbImage,
 }
 
 impl Slic<'_> {
-    fn run(&mut self) {
+    pub fn compute(&mut self) {
+        loop {
+            if self.digest() == RESIDUAL_ERROR_THRESHOLD { break }
+        }
+        self.labels = self.enforce_connectivity();
+    }
+
+    fn iter(&mut self) {
         let offset = (self.s).ceil() as u32;
         self.super_pixels.clone().into_iter().for_each(|mut pxl| {
             let (cx, cy, center_color) = pxl.centroid;
@@ -81,7 +91,14 @@ impl Slic<'_> {
                 self.img.height() - 1
             };
             let i = (pxl.label - 1) as usize;
-            let compactness = self.compactnesses[i];
+            let compactness = if self.slic_zero_mode {
+                let old_compactness = 100.0 - self.compactnesses[i];
+                self.compactnesses[i] = 0.0;
+                old_compactness
+            } else {
+                self.compactness
+            };
+
             self.compactnesses[i] = 0.0;
             for y in y1..(y2 + 1) {
                 for x in x1..(x2 + 1) {
@@ -92,10 +109,12 @@ impl Slic<'_> {
 
                     let (color_distance, new_distance) =
                       get_distance(pxl.centroid, pixel, compactness, self.s);
-                    let compactness_ratio =  f64::min(0.2 * color_distance, 20.0);
-                    if self.compactnesses[i] < compactness_ratio {
-                        self.compactnesses[i] = compactness_ratio;
-                    };
+                    if self.slic_zero_mode {
+                        let compactness_ratio =  f64::min(color_distance, 100.0);
+                        if self.compactnesses[i] < compactness_ratio {
+                            self.compactnesses[i] = compactness_ratio;
+                        };
+                    }
                     if prev_distance > new_distance {
                         self.distances[idx] = new_distance;
                         self.labels[idx] = pxl.label as i64;
@@ -105,7 +124,12 @@ impl Slic<'_> {
         });
     }
 
-    fn recompute_centers(&mut self) -> u32 {
+    fn digest(&mut self)->f64 {
+        self.iter();
+        self.recompute_centers()
+    }
+
+    fn recompute_centers(&mut self) -> f64 {
         let w = self.img.width();
         let h = self.img.height();
         let k = self.k as usize;
@@ -145,20 +169,20 @@ impl Slic<'_> {
             values.distances += distance;
             super_pixel.centroid = (x, y, [l, a, b]);
         });
-        values.distances / self.k
+        values.distances as f64 / self.k as f64
     }
 
-    fn enforce_connectivity(&self) -> (Vec<i32>) {
-        let (w, h) = (self.img.width() as i32, self.img.height() as i32);
+    fn enforce_connectivity(&self) -> (Vec<i64>) {
+        let (w, h) = (self.img.width() as i64, self.img.height() as i64);
         let image_size = w * h;
         let super_pixels_count =
-            image_size / (self.super_pixel_height * self.super_pixel_width) as i32;
+            image_size / (self.super_pixel_height * self.super_pixel_width) as i64;
         let (super_pixel_size, image_size_usize) =
             (image_size / super_pixels_count, image_size as usize);
         let (mut x_coords, mut y_coords) =
-            (vec![0i32; image_size_usize], vec![0i32; image_size_usize]);
-        let (mut main_index, mut adjust_label, mut label) = (0usize, 1i32, 1i32);
-        let mut merged_labels: Vec<i32> = vec![0; image_size_usize];
+            (vec![0i64; image_size_usize], vec![0i64; image_size_usize]);
+        let (mut main_index, mut adjust_label, mut label) = (0usize, 1i64, 1i64);
+        let mut merged_labels: Vec<i64> = vec![0; image_size_usize];
         // connected components row-by-row
         for j in 0..h {
             for k in 0..w {
@@ -169,8 +193,8 @@ impl Slic<'_> {
                     y_coords[0] = j;
                     // find adjust label
                     for n in 0usize..4 {
-                        let x = x_coords[0] as i32 + x_mtx[n];
-                        let y = y_coords[0] as i32 + y_mtx[n];
+                        let x = x_coords[0] as i64 + x_mtx[n];
+                        let y = y_coords[0] as i64 + y_mtx[n];
                         if (x >= 0 && x < w) && (y >= 0 && y < h) {
                             let sub_index = (y * w + x) as usize;
                             if merged_labels[sub_index] > 0 {
@@ -200,7 +224,7 @@ impl Slic<'_> {
                         o += 1;
                     }
                     // filter super_pixels above threshold, assign them to adjust labels using buffer vectors
-                    if order as i32 <= super_pixel_size >> 2 {
+                    if order as i64 <= super_pixel_size >> 2 {
                         for o in 0..order {
                             let ind = (y_coords[o] * w + x_coords[o]) as usize;
                             merged_labels[ind] = adjust_label
@@ -240,7 +264,7 @@ impl Slic<'_> {
     }
 }
 
-fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic {
+fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64, slic_zero_mode: bool) -> Slic {
     let (w, h) = img.dimensions();
     let n = w * h;
     let super_pixel_size = get_super_pixel_size(w, h, num_of_super_pixels);
@@ -273,6 +297,7 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64) -> Slic 
         super_pixel_height,
         compactness,
         super_pixels,
+        slic_zero_mode,
         distances: vec![MAX; n as usize],
         compactnesses: vec![compactness; k as usize],
         labels: vec![-1; n as usize],

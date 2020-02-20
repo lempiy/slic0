@@ -56,9 +56,9 @@ fn slic_run_works() {
 
   let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
 
-  let mut slic = get_slic(img, 9, 10.0);
+  let mut slic = get_slic(img, 9, 10.0, false);
 
-  slic.run();
+  slic.iter();
 
   let e = slic.recompute_centers();
   slic.labels.iter().enumerate().for_each(|(i, x)| {
@@ -68,7 +68,7 @@ fn slic_run_works() {
     }
   });
   println!("E: {}", e);
-  slic.run();
+  slic.iter();
 
   let e2 = slic.recompute_centers();
   slic.labels.iter().enumerate().for_each(|(i, x)| {
@@ -104,24 +104,9 @@ fn slic_enforce_works() {
 
   let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
 
-  let mut slic = get_slic(img, 20, 10.0);
-
-  slic.run();
-  slic.recompute_centers();
-  slic.run();
-  slic.recompute_centers();
-  slic.run();
-  slic.recompute_centers();
-  slic.run();
-  slic.recompute_centers();
-  slic.run();
-  slic.recompute_centers();
-  slic.run();
-  let e = slic.recompute_centers();
-  println!("e: {}", e);
-
-  let lbls = slic.enforce_connectivity();
-    lbls.iter().enumerate().for_each(|(i, x)| {
+  let mut slic = get_slic(img, 100, 10.0, true);
+  slic.compute();
+  slic.labels.iter().enumerate().for_each(|(i, x)| {
       print!("{}", if *x > 9 {((55 + *x) as u8 as char).to_string()} else { format!("{}", *x) });
       if ((i+1) % 200) == 0 {
           println!();
