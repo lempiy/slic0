@@ -1,5 +1,5 @@
 use super::*;
-use image::{ImageBuffer, Rgb, RgbImage, open};
+use image::{open, ImageBuffer, Rgb, RgbImage};
 
 #[test]
 fn rgb_to_lab_works() {
@@ -50,76 +50,61 @@ fn get_initial_centroid_works() {
 }
 
 #[test]
-fn slic_run_works() {
-  let mut image = open("./fixture/test.jpg")
-    .ok().expect("Cannot open image");
+fn slic_iter_works() {
+    let mut image = open("./fixture/test.jpg").ok().expect("Cannot open image");
+    let mut img = image
+        .as_mut_rgb8()
+        .expect("Cannot get RGB from DynamicImage");
 
-  let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
+    let mut slic = get_slic(img, 9, 10.0, false);
 
-  let mut slic = get_slic(img, 9, 10.0, false);
-
-  slic.iter();
-
-  let e = slic.recompute_centers();
-  slic.labels.iter().enumerate().for_each(|(i, x)| {
-    print!("{}", *x);
-    if ((i+1) % 200) == 0 {
-      println!();
-    }
-  });
-  println!("E: {}", e);
-  slic.iter();
-
-  let e2 = slic.recompute_centers();
-  slic.labels.iter().enumerate().for_each(|(i, x)| {
-    print!("{}", *x);
-    if ((i+1) % 200) == 0 {
-      println!();
-    }
-  });
-  println!("E: {}", e2);
-  let e3 = slic.recompute_centers();
-  slic.labels.iter().enumerate().for_each(|(i, x)| {
-    print!("{}", *x);
-    if ((i+1) % 200) == 0 {
-      println!();
-    }
-  });
-  println!("E: {}", e3);
-  let e4 = slic.recompute_centers();
-  slic.labels.iter().enumerate().for_each(|(i, x)| {
-    print!("{}", *x);
-    if ((i+1) % 200) == 0 {
-      println!();
-    }
-  });
-  println!("E: {}", e4);
-  assert_eq!(true, true);
+    slic.iter();
+    let e1 = slic.recompute_centers();
+    let count = slic.labels.iter().fold(HashSet::<i64, RandomState>::new(), |mut count, x| {
+        count.insert(*x);
+        count
+    });
+    assert_eq!(count.len() as u32, slic.k, "all superpixels should be present on canvas after first iteration");
+    slic.iter();
+    let e2 = slic.recompute_centers();
+    assert!(e1 > e2, "residual error decrease it's value on each SLIC iteration");
+    let count2 = slic.labels.iter().fold(HashSet::<i64, RandomState>::new(), |mut count, x| {
+        count.insert(*x);
+        count
+    });
+    assert_eq!(count2.len() as u32, slic.k, "all superpixels should be present on canvas after second iteration");
 }
 
 #[test]
 fn slic_enforce_works() {
-  let mut image = open("./fixture/test.jpg")
-    .ok().expect("Cannot open image");
+    let mut image = open("./fixture/test.jpg").ok().expect("Cannot open image");
 
-  let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
+    let mut img = image
+        .as_mut_rgb8()
+        .expect("Cannot get RGB from DynamicImage");
 
-  let mut slic = get_slic(img, 40, 10.0, true);
-  slic.compute();
+    let mut slic = get_slic(img, 40, 10.0, true);
+    slic.compute();
     let (w, h) = (img.width() as i64, img.height() as i64);
     let image_size = w * h;
-    let super_pixels_count =  slic.k as i64;
+    let super_pixels_count = slic.k as i64;
     let (super_pixel_size, image_size_usize) =
         (image_size / super_pixels_count, image_size as usize);
-    let (mut x_coords, mut y_coords) =
-        (vec![0i64; image_size_usize], vec![0i64; image_size_usize]);
+    let (mut x_coords, mut y_coords) = (vec![0i64; image_size_usize], vec![0i64; image_size_usize]);
     let (mut main_index, mut label) = (0usize, 1i64);
     let mut unique_labels = HashSet::new();
     let mut merged_labels: Vec<i64> = vec![0; image_size_usize];
     // connected components row-by-row
     slic.labels.iter().enumerate().for_each(|(i, x)| {
-        print!("{}", if *x > 9 {((55 + *x) as u8 as char).to_string()} else { format!("{}", *x) });
-        if ((i+1) % 200) == 0 {
+        print!(
+            "{}",
+            if *x > 9 {
+                ((55 + *x) as u8 as char).to_string()
+            } else {
+                format!("{}", *x)
+            }
+        );
+        if ((i + 1) % 200) == 0 {
             println!();
         }
     });
@@ -130,7 +115,6 @@ fn slic_enforce_works() {
                 x_coords[0] = k;
                 y_coords[0] = j;
 
-                // collect super_pixel, save its real pixel coords into buffer vectors
                 let (mut o, mut order, mut label_found) = (0, 1, false);
                 while o < order {
                     for n in 0..4 {
@@ -148,8 +132,11 @@ fn slic_enforce_works() {
                                 merged_labels[sub_index] = label;
                                 order += 1;
                                 if o == 0 && !label_found {
-                                    // duplicate superpixel labels should not occur
-                                    assert_eq!(unique_labels.get(&slic.labels[main_index]).is_none(), true);
+                                    assert_eq!(
+                                        unique_labels.get(&slic.labels[main_index]).is_none(),
+                                        true,
+                                        "duplicate superpixel labels should not occur"
+                                    );
                                     unique_labels.insert(slic.labels[main_index]);
                                     label_found = true;
                                 }
@@ -158,15 +145,17 @@ fn slic_enforce_works() {
                     }
                     o += 1;
                 }
-                // superpixels with size < threshold should not occur
-                assert_eq!(order as i64 > super_pixel_size >> 2, true);
+                assert_eq!(
+                    order as i64 > super_pixel_size >> 2,
+                    true,
+                    "superpixels with size < threshold should not occur"
+                );
                 label += 1;
             }
             main_index += 1;
         }
     }
-  let borders = slic.get_borders_image();
-  borders.save("./borders.png").unwrap();
-  assert_eq!(true, true);
+//    let borders = slic.get_borders_image();
+//    borders.save("./borders.png").unwrap();
+    assert_eq!(true, true);
 }
-
