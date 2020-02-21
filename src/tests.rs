@@ -104,7 +104,7 @@ fn slic_enforce_works() {
 
   let mut img = image.as_mut_rgb8().expect("Cannot get RGB from DynamicImage");
 
-  let mut slic = get_slic(img, 100, 10.0, true);
+  let mut slic = get_slic(img, 40, 10.0, true);
   slic.compute();
   slic.labels.iter().enumerate().for_each(|(i, x)| {
       print!("{}", if *x > 9 {((55 + *x) as u8 as char).to_string()} else { format!("{}", *x) });
@@ -112,7 +112,8 @@ fn slic_enforce_works() {
           println!();
       }
   });
-  println!("get_color_distance {}", get_color_distance([0.0, 0.0, 0.0], [100.0, 0.0, 0.0]));
+  let borders = slic.get_borders_image();
+  borders.save("./borders.png").unwrap();
   assert_eq!(false, true);
 }
 

@@ -1,6 +1,6 @@
 extern crate math;
 use crate::lab::{rgb_2_lab, sub, LabColor};
-use image::{Pixel, Pixels, RgbImage};
+use image::{Pixel, Pixels, RgbImage, RgbaImage, ImageBuffer, Rgba};
 use math::round::half_up;
 use std::borrow::BorrowMut;
 use std::boxed::Box;
@@ -46,8 +46,11 @@ struct ConnectedPixel {
 const threshold: f64 = MAX;
 const x_mtx: [i64; 4] = [-1, 0, 1, 0];
 const y_mtx: [i64; 4] = [0, -1, 0, 1];
+const x_mtx_8: [i64; 8] = [-1, -1, 0, 1, 1, 1, 0, -1];
+const y_mtx_8: [i64; 8] = [0, -1, -1, -1, 0, 1, 1, 1];
 const INITIAL_COMPACTNESS_SLIC_ZERO: f64 = 10.0;
 const RESIDUAL_ERROR_THRESHOLD: f64 = 0.0;
+
 
 pub struct Slic<'a> {
     pub k: u32,
@@ -72,6 +75,51 @@ impl Slic<'_> {
             if self.digest() == RESIDUAL_ERROR_THRESHOLD { break }
         }
         self.labels = self.enforce_connectivity();
+    }
+
+    pub fn get_borders_image(&self) -> RgbaImage{
+        let (width, height) = (self.img.width(), self.img.height());
+        let total_size = self.n as usize;
+        let (mut border_x, mut border_y, mut already_bordered) =
+            (vec![0u32; total_size], vec![0u32; total_size], vec![false; total_size]);
+        let (mut cursor, mut border_pixels_count) = (0usize, 0usize);
+        let mut buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(self.img.width(), self.img.height());
+        let (yellow, red) = (Rgba([255, 255, 0, 255]), Rgba([255, 0, 0, 255]));
+
+        for j in 0..height {
+            for k in 0..width {
+                if self.labels[cursor] == 0 {
+                    buffer.put_pixel(k, j, red);
+                    cursor+=1;
+                    continue
+                }
+
+                let mut heterogeneity = 0;
+                for i in 0..8 {
+                    let x = (k as i64) + x_mtx_8[i];
+                    let y = (j as i64) + y_mtx_8[i];
+
+                    if (x >= 0 && (x as u32) < width) && (y >= 0 && (y as u32) < height) {
+                        let index = (y*width as i64 + x) as usize;
+                        if !already_bordered[index] && self.labels[cursor] != self.labels[index] {
+                            heterogeneity+=1;
+                        }
+                    }
+                }
+                if heterogeneity > 1 {
+                    border_x[border_pixels_count] = k;
+                    border_y[border_pixels_count] = j;
+                    already_bordered[cursor] = true;
+                    border_pixels_count+=1;
+                }
+                cursor+=1;
+            }
+        };
+
+        for j in 0..border_pixels_count {
+            buffer.put_pixel(border_x[j], border_y[j], yellow)
+        }
+        buffer
     }
 
     fn iter(&mut self) {
