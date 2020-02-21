@@ -106,14 +106,67 @@ fn slic_enforce_works() {
 
   let mut slic = get_slic(img, 40, 10.0, true);
   slic.compute();
-  slic.labels.iter().enumerate().for_each(|(i, x)| {
-      print!("{}", if *x > 9 {((55 + *x) as u8 as char).to_string()} else { format!("{}", *x) });
-      if ((i+1) % 200) == 0 {
-          println!();
-      }
-  });
+    let (w, h) = (img.width() as i64, img.height() as i64);
+    let image_size = w * h;
+    let super_pixels_count =  slic.k as i64;
+    let (super_pixel_size, image_size_usize) =
+        (image_size / super_pixels_count, image_size as usize);
+    let (mut x_coords, mut y_coords) =
+        (vec![0i64; image_size_usize], vec![0i64; image_size_usize]);
+    let (mut main_index, mut label) = (0usize, 1i64);
+    let mut unique_labels = HashSet::new();
+    let mut merged_labels: Vec<i64> = vec![0; image_size_usize];
+    // connected components row-by-row
+    slic.labels.iter().enumerate().for_each(|(i, x)| {
+        print!("{}", if *x > 9 {((55 + *x) as u8 as char).to_string()} else { format!("{}", *x) });
+        if ((i+1) % 200) == 0 {
+            println!();
+        }
+    });
+    for j in 0..h {
+        for k in 0..w {
+            if 0 == merged_labels[main_index] {
+                merged_labels[main_index] = label;
+                x_coords[0] = k;
+                y_coords[0] = j;
+
+                // collect super_pixel, save its real pixel coords into buffer vectors
+                let (mut o, mut order, mut label_found) = (0, 1, false);
+                while o < order {
+                    for n in 0..4 {
+                        let x = x_coords[o] + x_mtx[n];
+                        let y = y_coords[o] + y_mtx[n];
+
+                        if (x >= 0 && x < w) && (y >= 0 && y < h) {
+                            let sub_index = (y * w + x) as usize;
+                            if 0 == merged_labels[sub_index]
+                                && slic.labels[main_index] == slic.labels[sub_index]
+                            {
+                                x_coords[order] = x;
+                                y_coords[order] = y;
+
+                                merged_labels[sub_index] = label;
+                                order += 1;
+                                if o == 0 && !label_found {
+                                    // duplicate superpixel labels should not occur
+                                    assert_eq!(unique_labels.get(&slic.labels[main_index]).is_none(), true);
+                                    unique_labels.insert(slic.labels[main_index]);
+                                    label_found = true;
+                                }
+                            }
+                        }
+                    }
+                    o += 1;
+                }
+                // superpixels with size < threshold should not occur
+                assert_eq!(order as i64 > super_pixel_size >> 2, true);
+                label += 1;
+            }
+            main_index += 1;
+        }
+    }
   let borders = slic.get_borders_image();
   borders.save("./borders.png").unwrap();
-  assert_eq!(false, true);
+  assert_eq!(true, true);
 }
 
