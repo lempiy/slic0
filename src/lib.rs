@@ -1,17 +1,14 @@
+//! This crate provides simple API to apply [Simple Linear Image Segmentation](http://infoscience.epfl.ch/record/177415/files/Superpixel_PAMI2011-2.pdf)
+//! on all types of 3-channel images. It also support SLIC0 variation of SLIC,
+//! with dynamic normalization of spectral distances.
+
 extern crate math;
 use crate::lab::{rgb_2_lab, sub, LabColor};
-use image::{Pixel, Pixels, RgbImage, RgbaImage, ImageBuffer, Rgba};
+use image::{ImageBuffer, RgbImage, Rgba, RgbaImage};
 use math::round::half_up;
-use std::borrow::BorrowMut;
-use std::boxed::Box;
-use std::cmp::min;
-use std::collections::hash_map::RandomState;
-use std::collections::{HashMap, HashSet};
 use std::f64::MAX;
 use std::marker::Copy;
-use std::u32::MAX as U32_MAX;
 
-pub mod connectivity;
 pub mod lab;
 
 #[derive(Copy, Clone)]
@@ -30,39 +27,33 @@ struct AvgValues {
     distances: u32,
 }
 
-struct ConnectedPixels {
-    target: ConnectedPixel,
-    prev: Option<ConnectedPixel>,
-    top: Option<ConnectedPixel>,
-}
-
-struct ConnectedPixel {
-    x: u32,
-    y: u32,
-    label: usize,
-    label_index: usize,
-}
-
-const threshold: f64 = MAX;
-const x_mtx: [i64; 4] = [-1, 0, 1, 0];
-const y_mtx: [i64; 4] = [0, -1, 0, 1];
-const x_mtx_8: [i64; 8] = [-1, -1, 0, 1, 1, 1, 0, -1];
-const y_mtx_8: [i64; 8] = [0, -1, -1, -1, 0, 1, 1, 1];
-const INITIAL_COMPACTNESS_SLIC_ZERO: f64 = 10.0;
+const X_MTX: [i64; 4] = [-1, 0, 1, 0];
+const Y_MTX: [i64; 4] = [0, -1, 0, 1];
+const X_MTX_8: [i64; 8] = [-1, -1, 0, 1, 1, 1, 0, -1];
+const Y_MTX_8: [i64; 8] = [0, -1, -1, -1, 0, 1, 1, 1];
 const RESIDUAL_ERROR_THRESHOLD: f64 = 0.0;
 
-
+/// Main SLIC state struct which holds the state for each step
+/// of clustering process.
+///
+/// This struct is created by the [`slic::get_slic`] function. See its
+/// documentation for more.
+///
+/// [`slic::get_slic`]: ./fn.get_slic.html
 pub struct Slic<'a> {
+    /// result amount of superpixels (clusters).
     pub k: u32,
+    /// value between 0-20. balances color proximity and space proximity. Higher values give more weight to space proximity, making superpixel shapes more square/cubic. In SLICO mode, this is the initial compactness.
     pub compactness: f64,
+    /// run SLIC-zero, the zero compactness parameter mode of SLIC.
     pub slic_zero_mode: bool,
+    /// SLIC result Vec<u32>. Labels mask produced on input image. Max label is *k*.
     pub labels: Vec<i64>,
+    /// reference image target image received in [`slic::get_slic`](./fn.get_slic.html).
     pub img: &'a RgbImage,
     n: u32,
     s: f64,
-    super_pixels_per_width: u32,
     super_pixel_width: u32,
-    super_pixels_per_height: u32,
     super_pixel_height: u32,
     super_pixels: Vec<SuperPixel>,
     compactnesses: Vec<f64>,
@@ -70,18 +61,45 @@ pub struct Slic<'a> {
 }
 
 impl Slic<'_> {
+    /// Mutable methods which runs SLIC computations.
+    /// Applies iterations until [residual error](https://en.wikipedia.org/wiki/Errors_and_residuals) will be close to 0.
+    /// Calls enforce connectivity using [Connected Components Algorithm](https://en.wikipedia.org/wiki/Connected-component_labeling)
     pub fn compute(&mut self) {
         loop {
-            if self.digest() == RESIDUAL_ERROR_THRESHOLD { break }
+            if self.digest() == RESIDUAL_ERROR_THRESHOLD {
+                break;
+            }
         }
         self.labels = self.enforce_connectivity();
     }
-
-    pub fn get_borders_image(&self) -> RgbaImage{
+    /// Crates 4-channel [`image::RgbaImage`](https://docs.rs/image/0.18.0/image/type.RgbaImage.html) with `self.img` dimensions.
+    /// Draws yellow borders for each cluster on transparent background.
+    /// Moves result variable to caller.
+    ///
+    /// # Examples:
+    ///
+    /// ```no_run
+    /// use slic::get_slic;
+    /// use image::{open};
+    /// fn main() {
+    ///     let mut image = open("./my_image.jpg").ok().expect("Cannot open image");
+    ///     let img = image
+    ///         .as_mut_rgb8()
+    ///         .expect("Cannot get RGB from DynamicImage");
+    ///
+    ///     let mut slic = get_slic(img, 30, 10.0, true);
+    ///     slic.compute();
+    ///     slic.get_borders_image().save("./borders.png").expect("Cannot save image on disk");
+    /// }
+/// ```
+    pub fn get_borders_image(&self) -> RgbaImage {
         let (width, height) = (self.img.width(), self.img.height());
         let total_size = self.n as usize;
-        let (mut border_x, mut border_y, mut already_bordered) =
-            (vec![0u32; total_size], vec![0u32; total_size], vec![false; total_size]);
+        let (mut border_x, mut border_y, mut already_bordered) = (
+            vec![0u32; total_size],
+            vec![0u32; total_size],
+            vec![false; total_size],
+        );
         let (mut cursor, mut border_pixels_count) = (0usize, 0usize);
         let mut buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(self.img.width(), self.img.height());
         let (yellow, red) = (Rgba([255, 255, 0, 255]), Rgba([255, 0, 0, 255]));
@@ -90,19 +108,19 @@ impl Slic<'_> {
             for k in 0..width {
                 if self.labels[cursor] == 0 {
                     buffer.put_pixel(k, j, red);
-                    cursor+=1;
-                    continue
+                    cursor += 1;
+                    continue;
                 }
 
                 let mut heterogeneity = 0;
                 for i in 0..8 {
-                    let x = (k as i64) + x_mtx_8[i];
-                    let y = (j as i64) + y_mtx_8[i];
+                    let x = (k as i64) + X_MTX_8[i];
+                    let y = (j as i64) + Y_MTX_8[i];
 
                     if (x >= 0 && (x as u32) < width) && (y >= 0 && (y as u32) < height) {
-                        let index = (y*width as i64 + x) as usize;
+                        let index = (y * width as i64 + x) as usize;
                         if !already_bordered[index] && self.labels[cursor] != self.labels[index] {
-                            heterogeneity+=1;
+                            heterogeneity += 1;
                         }
                     }
                 }
@@ -110,11 +128,11 @@ impl Slic<'_> {
                     border_x[border_pixels_count] = k;
                     border_y[border_pixels_count] = j;
                     already_bordered[cursor] = true;
-                    border_pixels_count+=1;
+                    border_pixels_count += 1;
                 }
-                cursor+=1;
+                cursor += 1;
             }
-        };
+        }
 
         for j in 0..border_pixels_count {
             buffer.put_pixel(border_x[j], border_y[j], yellow)
@@ -124,8 +142,8 @@ impl Slic<'_> {
 
     fn iter(&mut self) {
         let offset = (self.s).ceil() as u32;
-        self.super_pixels.clone().into_iter().for_each(|mut pxl| {
-            let (cx, cy, center_color) = pxl.centroid;
+        self.super_pixels.clone().into_iter().for_each(| pxl| {
+            let (cx, cy, _) = pxl.centroid;
             let x1 = if cx > offset { cx - offset } else { 0 };
             let y1 = if cy > offset { cy - offset } else { 0 };
             let x2 = if cx + offset < self.img.width() {
@@ -156,9 +174,9 @@ impl Slic<'_> {
                     let pixel = get_lab_pixel(self.img, x, y);
 
                     let (color_distance, new_distance) =
-                      get_distance(pxl.centroid, pixel, compactness, self.s);
+                        get_distance(pxl.centroid, pixel, compactness, self.s);
                     if self.slic_zero_mode {
-                        let compactness_ratio =  f64::min(color_distance, 100.0);
+                        let compactness_ratio = f64::min(color_distance, 100.0);
                         if self.compactnesses[i] < compactness_ratio {
                             self.compactnesses[i] = compactness_ratio;
                         };
@@ -172,7 +190,7 @@ impl Slic<'_> {
         });
     }
 
-    fn digest(&mut self)->f64 {
+    fn digest(&mut self) -> f64 {
         self.iter();
         self.recompute_centers()
     }
@@ -208,9 +226,9 @@ impl Slic<'_> {
             let label = super_pixel.label as usize - 1;
             let (cx, cy, _) = super_pixel.centroid;
             let count = values.count[label];
-            let l = half_up((values.l[label] / count), 4);
-            let a = half_up((values.a[label] / count), 4);
-            let b = half_up((values.b[label] / count), 4);
+            let l = half_up(values.l[label] / count, 4);
+            let a = half_up(values.a[label] / count, 4);
+            let b = half_up(values.b[label] / count, 4);
             let x = (values.x[label] / count).round() as u32;
             let y = (values.y[label] / count).round() as u32;
             let distance = l1_distance(cx, cy, x, y);
@@ -241,8 +259,8 @@ impl Slic<'_> {
                     y_coords[0] = j;
                     // find adjust label
                     for n in 0usize..4 {
-                        let x = x_coords[0] as i64 + x_mtx[n];
-                        let y = y_coords[0] as i64 + y_mtx[n];
+                        let x = x_coords[0] as i64 + X_MTX[n];
+                        let y = y_coords[0] as i64 + Y_MTX[n];
                         if (x >= 0 && x < w) && (y >= 0 && y < h) {
                             let sub_index = (y * w + x) as usize;
                             if merged_labels[sub_index] > 0 {
@@ -254,8 +272,8 @@ impl Slic<'_> {
                     let (mut o, mut order) = (0, 1);
                     while o < order {
                         for n in 0..4 {
-                            let x = x_coords[o] + x_mtx[n];
-                            let y = y_coords[o] + y_mtx[n];
+                            let x = x_coords[o] + X_MTX[n];
+                            let y = y_coords[o] + Y_MTX[n];
 
                             if (x >= 0 && x < w) && (y >= 0 && y < h) {
                                 let sub_index = (y * w + x) as usize;
@@ -286,33 +304,49 @@ impl Slic<'_> {
         }
         return merged_labels;
     }
-
-    fn get_pixel_label(&self, x: u32, y: u32) -> Option<ConnectedPixel> {
-        if let Some(label_index) = self.get_label_index(x, y) {
-            let label = self.labels[label_index] as usize - 1;
-            Some(ConnectedPixel {
-                x,
-                y,
-                label,
-                label_index,
-            })
-        } else {
-            None
-        }
-    }
-
-    fn get_label_index(&self, x: u32, y: u32) -> Option<usize> {
-        if x >= self.img.width() {
-            return None;
-        }
-        if y >= self.img.height() {
-            return None;
-        }
-        Some((y * self.img.width() + x) as usize)
-    }
 }
 
-fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64, slic_zero_mode: bool) -> Slic {
+/// Constructor for [`slic0::Slic`] struct. Produces SLIC state object.
+///
+/// | Argument              | Role                                                        |
+/// |:---------------------:|:-----------------------------------------------------------:|
+/// | *img*                 | Image ([`image::RgbImage`]) target for SLIC.                |
+/// | *num_of_super_pixels* | Approximate (+/- 3) amount of requested clusters.           |
+/// | *compactness*         | balances color proximity and space proximity. Between 0-20. |
+/// | *slic_zero_mode*      | run SLIC-zero, the zero compactness parameter mode of SLIC. |
+///
+///
+/// # Examples:
+///
+/// ```no_run
+/// use slic::get_slic;
+/// use image::{open};
+/// fn main() {
+///     let mut image = open("./my_image.jpg").ok().expect("Cannot open image");
+///     let img = image
+///         .as_mut_rgb8()
+///         .expect("Cannot get RGB from DynamicImage");
+///
+///     let mut slic = get_slic(img, 30, 10.0, true);
+///     slic.compute();
+///     // print labels as ascii symbols art to stdout
+///     slic.labels.iter().enumerate().for_each(|(i, x)| {
+///        print!("{}", ((32 + *x) as u8 as char).to_string());
+///        if ((i + 1) % img.width() as usize) == 0 {
+///            println!();
+///        }
+///     });
+/// }
+/// ```
+///
+/// [`slic0::Slic`]: ./struct.Slic.html
+/// [`image::RgbImage`]: https://docs.rs/image/0.19.0/image/type.RgbImage.html
+pub fn get_slic(
+    img: &RgbImage,
+    num_of_super_pixels: u32,
+    compactness: f64,
+    slic_zero_mode: bool,
+) -> Slic {
     let (w, h) = img.dimensions();
     let n = w * h;
     let super_pixel_size = get_super_pixel_size(w, h, num_of_super_pixels);
@@ -339,9 +373,7 @@ fn get_slic(img: &RgbImage, num_of_super_pixels: u32, compactness: f64, slic_zer
         k,
         n,
         s: (n as f64 / k as f64).sqrt(),
-        super_pixels_per_width,
         super_pixel_width,
-        super_pixels_per_height,
         super_pixel_height,
         compactness,
         super_pixels,
@@ -359,8 +391,8 @@ fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
         .flatten()
         .fold((MAX, None), |acc, option| {
             if let Some(next_pxl) = option {
-                let (prev_gradient, prev_pxl) = acc;
-                let (x, y, color) = next_pxl;
+                let (prev_gradient, _) = acc;
+                let (x, y, _) = next_pxl;
                 let next_gradient = get_gradient_position(img, *x, *y);
                 if next_gradient <= prev_gradient {
                     (next_gradient, Some(*next_pxl))
@@ -473,7 +505,7 @@ fn get_neighbour_color_vector(pxl: &LabPixel, neighbour: Option<LabPixel>) -> La
         n_color
     } else {
         // if no neighbour return original pixel
-        let (lx, ly, color) = *pxl;
+        let (_, _, color) = *pxl;
         color
     }
 }
@@ -505,14 +537,14 @@ fn get_spacial_distance(p1: (u32, u32), p2: (u32, u32)) -> f64 {
     )
 }
 
-fn get_distance(p1: LabPixel, p2: LabPixel, m: f64, S: f64) -> (f64, f64) {
+fn get_distance(p1: LabPixel, p2: LabPixel, m: f64, s: f64) -> (f64, f64) {
     let (p1x, p1y, color_p1) = p1;
     let (p2x, p2y, color_p2) = p2;
     let color_distance = get_color_distance(color_p1, color_p2);
     (
         color_distance,
         half_up(
-            color_distance + m / S * get_spacial_distance((p1x, p1y), (p2x, p2y)),
+            color_distance + m / s * get_spacial_distance((p1x, p1y), (p2x, p2y)),
             4,
         ),
     )

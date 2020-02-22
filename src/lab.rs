@@ -1,5 +1,4 @@
 use math::round::half_up;
-use std::ops;
 
 pub type LabColor = [f64; 3];
 
