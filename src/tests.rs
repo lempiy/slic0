@@ -160,6 +160,4 @@ fn slic_compute_works() {
     let mut slic = get_slic(img, 150, 10.0, true);
     slic.compute();
     check_slic_result(&mut slic, img);
-    let borders = slic.get_borders_image();
-    borders.save("./borders.png").unwrap();
 }
