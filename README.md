@@ -16,6 +16,12 @@ Library can be used in all areas where image pre-processing is required.
 
 More info [here](https://en.wikipedia.org/wiki/Image_segmentation).
 
+#### Case
+
+![test.jpg](./fixture/test.jpg)
+![test.jpg](./fixture/test_borders.jpg)
+
+
 #### Example
 
 ```rust
