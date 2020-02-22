@@ -1,7 +1,7 @@
 # Rust SLIC
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/lempiy/slic0/LICENSE)
-[![Rust Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](http://lempiy.github.io/slic0/doc/slic)
+[![Rust Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](https://lempiy.github.io/slic0/doc/slic)
 
 Rust realization of [Simple Linear Image Segmentation](http://infoscience.epfl.ch/record/177415/files/Superpixel_PAMI2011-2.pdf) 
 algorithm with SLIC0 and lowest gradient seeding support.
