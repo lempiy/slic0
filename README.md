@@ -1,6 +1,6 @@
 # Rust SLIC
 
-[![Actions Status](https://github.com/lempiy/slic0/workflows/rust/badge.svg)](https://github.com/lempiy/slic0/actions)
+[![Build & Test](https://github.com/lempiy/slic0/workflows/.github/workflows/rust.yml/badge.svg)](https://github.com/lempiy/slic0/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/lempiy/slic0/LICENSE)
 [![Rust Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](https://lempiy.github.io/slic0/doc/slic)
 
