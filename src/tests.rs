@@ -1,74 +1,78 @@
 use super::*;
 use image::{open, ImageBuffer, Rgb, RgbImage};
 use std::collections::hash_map::RandomState;
-use std::collections::{HashSet};
+use std::collections::HashSet;
 
 fn check_superpixels_count(slic: &mut Slic) -> bool {
-  slic.k as usize == slic.labels.iter().fold(HashSet::<i64, RandomState>::new(), |mut count, x| {
-    count.insert(*x);
-    count
-  }).len()
+    slic.k as usize
+        == slic
+            .labels
+            .iter()
+            .fold(HashSet::<i64, RandomState>::new(), |mut count, x| {
+                count.insert(*x);
+                count
+            })
+            .len()
 }
 
-
 fn check_slic_result(slic: &mut Slic, img: &RgbImage) {
-  let (w, h) = (img.width() as i64, img.height() as i64);
-  let image_size = w * h;
-  let super_pixels_count = slic.k as i64;
-  let (super_pixel_size, image_size_usize) =
-    (image_size / super_pixels_count, image_size as usize);
-  let (mut x_coords, mut y_coords) = (vec![0i64; image_size_usize], vec![0i64; image_size_usize]);
-  let (mut main_index, mut label) = (0usize, 1i64);
-  let mut unique_labels = HashSet::new();
-  let mut merged_labels: Vec<i64> = vec![0; image_size_usize];
-  // connected components row-by-row
-  for j in 0..h {
-    for k in 0..w {
-      if 0 == merged_labels[main_index] {
-        merged_labels[main_index] = label;
-        x_coords[0] = k;
-        y_coords[0] = j;
+    let (w, h) = (img.width() as i64, img.height() as i64);
+    let image_size = w * h;
+    let super_pixels_count = slic.k as i64;
+    let (super_pixel_size, image_size_usize) =
+        (image_size / super_pixels_count, image_size as usize);
+    let (mut x_coords, mut y_coords) = (vec![0i64; image_size_usize], vec![0i64; image_size_usize]);
+    let (mut main_index, mut label) = (0usize, 1i64);
+    let mut unique_labels = HashSet::new();
+    let mut merged_labels: Vec<i64> = vec![0; image_size_usize];
+    // connected components row-by-row
+    for j in 0..h {
+        for k in 0..w {
+            if 0 == merged_labels[main_index] {
+                merged_labels[main_index] = label;
+                x_coords[0] = k;
+                y_coords[0] = j;
 
-        let (mut o, mut order, mut label_found) = (0, 1, false);
-        while o < order {
-          for n in 0..4 {
-            let x = x_coords[o] + X_MTX[n];
-            let y = y_coords[o] + Y_MTX[n];
+                let (mut o, mut order, mut label_found) = (0, 1, false);
+                while o < order {
+                    for n in 0..4 {
+                        let x = x_coords[o] + X_MTX[n];
+                        let y = y_coords[o] + Y_MTX[n];
 
-            if (x >= 0 && x < w) && (y >= 0 && y < h) {
-              let sub_index = (y * w + x) as usize;
-              if 0 == merged_labels[sub_index]
-                && slic.labels[main_index] == slic.labels[sub_index]
-              {
-                x_coords[order] = x;
-                y_coords[order] = y;
+                        if (x >= 0 && x < w) && (y >= 0 && y < h) {
+                            let sub_index = (y * w + x) as usize;
+                            if 0 == merged_labels[sub_index]
+                                && slic.labels[main_index] == slic.labels[sub_index]
+                            {
+                                x_coords[order] = x;
+                                y_coords[order] = y;
 
-                merged_labels[sub_index] = label;
-                order += 1;
-                if o == 0 && !label_found {
-                  assert_eq!(
-                    unique_labels.get(&slic.labels[main_index]).is_none(),
-                    true,
-                    "duplicate superpixel labels should not occur"
-                  );
-                  unique_labels.insert(slic.labels[main_index]);
-                  label_found = true;
+                                merged_labels[sub_index] = label;
+                                order += 1;
+                                if o == 0 && !label_found {
+                                    assert_eq!(
+                                        unique_labels.get(&slic.labels[main_index]).is_none(),
+                                        true,
+                                        "duplicate superpixel labels should not occur"
+                                    );
+                                    unique_labels.insert(slic.labels[main_index]);
+                                    label_found = true;
+                                }
+                            }
+                        }
+                    }
+                    o += 1;
                 }
-              }
+                assert_eq!(
+                    order as i64 > super_pixel_size >> 2,
+                    true,
+                    "superpixels with size < threshold should not occur"
+                );
+                label += 1;
             }
-          }
-          o += 1;
+            main_index += 1;
         }
-        assert_eq!(
-          order as i64 > super_pixel_size >> 2,
-          true,
-          "superpixels with size < threshold should not occur"
-        );
-        label += 1;
-      }
-      main_index += 1;
     }
-  };
 }
 
 #[test]
@@ -130,11 +134,20 @@ fn slic_iter_works() {
 
     slic.iter();
     let e1 = slic.recompute_centers();
-    assert!(check_superpixels_count(&mut slic), "all superpixels should be present on canvas after first iteration");
+    assert!(
+        check_superpixels_count(&mut slic),
+        "all superpixels should be present on canvas after first iteration"
+    );
     slic.iter();
     let e2 = slic.recompute_centers();
-    assert!(e1 > e2, "residual error decrease it's value on each SLIC iteration");
-    assert!(check_superpixels_count(&mut slic), "all superpixels should be present on canvas after second iteration");
+    assert!(
+        e1 > e2,
+        "residual error decrease it's value on each SLIC iteration"
+    );
+    assert!(
+        check_superpixels_count(&mut slic),
+        "all superpixels should be present on canvas after second iteration"
+    );
 }
 
 #[test]

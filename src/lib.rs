@@ -91,7 +91,7 @@ impl Slic<'_> {
     ///     slic.compute();
     ///     slic.get_borders_image().save("./borders.png").expect("Cannot save image on disk");
     /// }
-/// ```
+    /// ```
     pub fn get_borders_image(&self) -> RgbaImage {
         let (width, height) = (self.img.width(), self.img.height());
         let total_size = self.n as usize;
@@ -142,7 +142,7 @@ impl Slic<'_> {
 
     fn iter(&mut self) {
         let offset = (self.s).ceil() as u32;
-        self.super_pixels.clone().into_iter().for_each(| pxl| {
+        self.super_pixels.clone().into_iter().for_each(|pxl| {
             let (cx, cy, _) = pxl.centroid;
             let x1 = if cx > offset { cx - offset } else { 0 };
             let y1 = if cy > offset { cy - offset } else { 0 };

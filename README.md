@@ -16,11 +16,7 @@ Library can be used in all areas where image pre-processing is required.
 
 More info [here](https://en.wikipedia.org/wiki/Image_segmentation).
 
-#### Case
-
-![test.jpg](./fixture/test.jpg)
-![test.jpg](./fixture/test_borders.jpg)
-
+#### [Documentation](https://lempiy.github.io/slic0/doc/slic)
 
 #### Example
 
@@ -28,17 +24,12 @@ More info [here](https://en.wikipedia.org/wiki/Image_segmentation).
 use slic::get_slic;
 use image::{open};
 fn main() {
-    let mut image = open("./my_image.jpg")
-        .ok()
-        .expect("Cannot open image");
-    let img = image.as_rgb8()
-        .expect("Cannot get RGB from DynamicImage");
+    let mut image = open("./my_image.jpg").ok().expect("Cannot open image");
+    let img = image.as_rgb8().expect("Cannot get RGB from DynamicImage");
     let mut slic = get_slic(img, 30, 10.0, true);
     slic.compute();
     // save segments net to file
-    slic.get_borders_image()
-        .save("./borders.png")
-        .expect("Cannot save image on disk");
+    slic.get_borders_image().save("./borders.png").expect("Cannot save image on disk");
     // print segments as ASCII art to stdout
     slic.labels.iter().enumerate().for_each(|(i, x)| {
        print!("{}", ((32 + *x) as u8 as char).to_string());
@@ -48,6 +39,12 @@ fn main() {
     });
 }
 ```
+
+#### Case
+
+![test.jpg](./fixture/test.jpg)
+![test.jpg](./fixture/test_borders.jpg)
+
 
 #### License
 
