@@ -101,7 +101,7 @@ fn rgb_to_lab_works() {
 fn get_lab_pixel_works() {
     let mut image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(100, 100);
     image.put_pixel(50, 50, Rgb([255, 255, 255]));
-    let (x1, y1, color1) = get_lab_pixel(&image, 50, 50);
+    let (x1, y1, color1) = get_lab_pixel_from_image(&image, 50, 50);
     assert_eq!(x1, 50);
     assert_eq!(y1, 50);
     assert_eq!(color1[0].round(), 100.0);
@@ -118,7 +118,8 @@ fn get_initial_centroid_works() {
     image.put_pixel(90, 90, Rgb([31, 32, 255]));
     image.put_pixel(91, 91, Rgb([0, 255, 0]));
     image.put_pixel(92, 91, Rgb([255, 255, 0]));
-    let centroid = get_initial_centroid(&image, 90, 90);
+    let slic = get_slic(&image, 9, 10.0, false);
+    let centroid = get_initial_centroid(&slic.lab_image_data, image.width(), image.height(), 90, 90);
     assert_eq!(centroid.0, 89);
     assert_eq!(centroid.1, 91);
 }
@@ -131,7 +132,6 @@ fn slic_iter_works() {
         .expect("Cannot get RGB from DynamicImage");
 
     let mut slic = get_slic(img, 9, 10.0, false);
-
     slic.iter();
     let e1 = slic.recompute_centers();
     assert!(
@@ -157,9 +157,7 @@ fn slic_compute_works() {
         .as_mut_rgb8()
         .expect("Cannot get RGB from DynamicImage");
 
-    let mut slic = get_slic(img, 150, 10.0, true);
+    let mut slic = get_slic(img, 120, 10.0, true);
     slic.compute();
     check_slic_result(&mut slic, img);
-    let borders = slic.get_borders_image();
-    borders.save("./borders.png").unwrap();
 }

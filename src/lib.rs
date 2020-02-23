@@ -5,7 +5,6 @@
 extern crate math;
 use crate::lab::{rgb_2_lab, sub, LabColor};
 use image::{ImageBuffer, RgbImage, Rgba, RgbaImage};
-use math::round::half_up;
 use std::f64::MAX;
 use std::marker::Copy;
 
@@ -58,6 +57,7 @@ pub struct Slic<'a> {
     super_pixels: Vec<SuperPixel>,
     compactnesses: Vec<f64>,
     distances: Vec<f64>,
+    lab_image_data: Vec<f64>,
 }
 
 impl Slic<'_> {
@@ -135,59 +135,59 @@ impl Slic<'_> {
         }
 
         for j in 0..border_pixels_count {
-            buffer.put_pixel(border_x[j], border_y[j], yellow)
+          buffer.put_pixel(border_x[j], border_y[j], yellow);
         }
         buffer
     }
 
     fn iter(&mut self) {
         let offset = (self.s).ceil() as u32;
-        self.super_pixels.clone().into_iter().for_each(|pxl| {
-            let (cx, cy, _) = pxl.centroid;
-            let x1 = if cx > offset { cx - offset } else { 0 };
-            let y1 = if cy > offset { cy - offset } else { 0 };
-            let x2 = if cx + offset < self.img.width() {
-                cx + offset
-            } else {
-                self.img.width() - 1
-            };
-            let y2 = if cy + offset < self.img.height() {
-                cy + offset
-            } else {
-                self.img.height() - 1
-            };
-            let i = (pxl.label - 1) as usize;
-            let compactness = if self.slic_zero_mode {
-                let old_compactness = 100.0 - self.compactnesses[i];
-                self.compactnesses[i] = 0.0;
-                old_compactness
-            } else {
-                self.compactness
-            };
-
+        for j in 0..self.super_pixels.len() {
+          let pxl = self.super_pixels[j];
+          let (cx, cy, _) = pxl.centroid;
+          let x1 = if cx > offset { cx - offset } else { 0 };
+          let y1 = if cy > offset { cy - offset } else { 0 };
+          let x2 = if cx + offset < self.img.width() {
+            cx + offset
+          } else {
+            self.img.width() - 1
+          };
+          let y2 = if cy + offset < self.img.height() {
+            cy + offset
+          } else {
+            self.img.height() - 1
+          };
+          let i = (pxl.label - 1) as usize;
+          let compactness = if self.slic_zero_mode {
+            let old_compactness = 100.0 - self.compactnesses[i];
             self.compactnesses[i] = 0.0;
-            for y in y1..(y2 + 1) {
-                for x in x1..(x2 + 1) {
-                    let idx = (y * self.img.width() + x) as usize;
-                    let prev_distance = self.distances[idx];
-                    // calc distance
-                    let pixel = get_lab_pixel(self.img, x, y);
+            old_compactness
+          } else {
+            self.compactness
+          };
+          self.compactnesses[i] = 0.0;
+          for y in y1..(y2 + 1) {
+            for x in x1..(x2 + 1) {
+              let idx = (y * self.img.width() + x) as usize;
+              let prev_distance = self.distances[idx];
+              // calc distance
+              let pixel = get_lab_pixel(&self.lab_image_data, self.img.width(), x, y);
+              let (color_distance, new_distance) =
+                get_distance(pxl.centroid, pixel, compactness, self.s);
+              if self.slic_zero_mode {
+                let compactness_ratio = f64::min(color_distance, 100.0);
+                if self.compactnesses[i] < compactness_ratio {
+                  self.compactnesses[i] = compactness_ratio;
+                };
+              }
+              if prev_distance > new_distance {
+                self.distances[idx] = new_distance;
+                self.labels[idx] = pxl.label as i64;
+              };
 
-                    let (color_distance, new_distance) =
-                        get_distance(pxl.centroid, pixel, compactness, self.s);
-                    if self.slic_zero_mode {
-                        let compactness_ratio = f64::min(color_distance, 100.0);
-                        if self.compactnesses[i] < compactness_ratio {
-                            self.compactnesses[i] = compactness_ratio;
-                        };
-                    }
-                    if prev_distance > new_distance {
-                        self.distances[idx] = new_distance;
-                        self.labels[idx] = pxl.label as i64;
-                    };
-                }
             }
-        });
+          }
+        }
     }
 
     fn digest(&mut self) -> f64 {
@@ -213,7 +213,7 @@ impl Slic<'_> {
                 let label_idx = (y * w + x) as usize;
                 let label = self.labels[label_idx] as usize - 1;
                 self.distances[label] = MAX;
-                let (x, y, color) = get_lab_pixel(self.img, x, y);
+                let (x, y, color) = get_lab_pixel(&self.lab_image_data, w, x, y);
                 values.x[label] += x as f64;
                 values.y[label] += y as f64;
                 values.l[label] += color[0];
@@ -226,9 +226,9 @@ impl Slic<'_> {
             let label = super_pixel.label as usize - 1;
             let (cx, cy, _) = super_pixel.centroid;
             let count = values.count[label];
-            let l = half_up(values.l[label] / count, 4);
-            let a = half_up(values.a[label] / count, 4);
-            let b = half_up(values.b[label] / count, 4);
+            let l =values.l[label] / count;
+            let a =values.a[label] / count;
+            let b =values.b[label] / count;
             let x = (values.x[label] / count).round() as u32;
             let y = (values.y[label] / count).round() as u32;
             let distance = l1_distance(cx, cy, x, y);
@@ -343,30 +343,47 @@ impl Slic<'_> {
 /// [`image::RgbImage`]: https://docs.rs/image/0.19.0/image/type.RgbImage.html
 pub fn get_slic(
     img: &RgbImage,
-    num_of_super_pixels: u32,
+    num_of_clusters: u32,
     compactness: f64,
     slic_zero_mode: bool,
 ) -> Slic {
     let (w, h) = img.dimensions();
     let n = w * h;
-    let super_pixel_size = get_super_pixel_size(w, h, num_of_super_pixels);
-    let super_pixel_edge = f64::from(super_pixel_size).sqrt().ceil() as u32;
+    let (super_pixels_per_width, super_pixels_per_height) = get_clusters_count(num_of_clusters, w, h);
+    let num_of_super_pixels = super_pixels_per_width * super_pixels_per_height;
     let mut super_pixels: Vec<SuperPixel> = Vec::with_capacity(num_of_super_pixels as usize);
-    let super_pixels_per_width = (f64::from(w) / f64::from(super_pixel_edge)).round() as u32;
     let super_pixels_per_height = num_of_super_pixels / super_pixels_per_width;
+    let (left_x, mut left_y) = (w % super_pixels_per_width, h % super_pixels_per_height);
     let (super_pixel_width, super_pixel_height) =
-        (w / super_pixels_per_width, h / super_pixels_per_height);
+        ((w-left_x)/ super_pixels_per_width, (h - left_y) / super_pixels_per_height);
+    let mut lab_image_data = vec![0.0; (n*3) as usize];
+    for y in 0..h {
+      for x in 0..w {
+        let (_, _, color) = get_lab_pixel_from_image(img, x, y);
+        let idx = ((y * w + x) * 3) as usize;
+        lab_image_data[idx] = color[0];
+        lab_image_data[idx+1] = color[1];
+        lab_image_data[idx+2] = color[2];
+      }
+    }
+    let mut offset_y = 0;
     for y in 0..super_pixels_per_height {
+        let full_super_pixel_height = super_pixel_height + if left_y != 0 { left_y -= 1; 1} else {0};
+        let mut left_width = left_x;
+        let mut offset_x = 0;
         for x in 0..super_pixels_per_width {
-            let (sx, sy) = (x * super_pixel_width, y * super_pixel_height);
+            let full_super_pixel_width = super_pixel_width + if left_width != 0 { left_width -= 1; 1} else {0};
+            let (sx, sy) = (offset_x, offset_y);
             let (cx, cy) = (
-                sx + (super_pixel_width as f64 * 0.5_f64).round() as u32,
-                sy + (super_pixel_height as f64 * 0.5_f64).round() as u32,
+                sx + (full_super_pixel_width as f64 * 0.5_f64).round() as u32,
+                sy + (full_super_pixel_height as f64 * 0.5_f64).round() as u32,
             );
             let label = y * super_pixels_per_width + x + 1;
-            let centroid = get_initial_centroid(img, cx, cy);
-            super_pixels.push(SuperPixel { label, centroid })
+            let centroid = get_initial_centroid(&lab_image_data, w, h, cx, cy);
+            super_pixels.push(SuperPixel { label, centroid });
+            offset_x += full_super_pixel_width;
         }
+        offset_y += full_super_pixel_height;
     }
     let k = super_pixels_per_width * super_pixels_per_height;
     Slic {
@@ -382,18 +399,35 @@ pub fn get_slic(
         compactnesses: vec![compactness; k as usize],
         labels: vec![-1; n as usize],
         img,
+      lab_image_data,
     }
 }
 
-fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
-    let (_, pxl) = get_pixel_3x3_neighbourhood(img, cx, cy)
+fn get_clusters_count(requested_count: u32, w: u32, h: u32) -> (u32, u32) {
+  let cluster_size = w * h / requested_count;
+  let step = ((cluster_size as f64).sqrt() + 0.5) as u32;
+  let mut super_pixels_per_width = (0.5 + w as f64/step as f64) as u32;
+  let mut super_pixels_per_height = (0.5 + h as f64/step as f64) as u32;
+  let residual_for_x = w as i64 - (step*super_pixels_per_width) as i64;
+  let residual_for_y = h as i64 - (step*super_pixels_per_height) as i64;
+  if residual_for_x < 0 {
+    super_pixels_per_width -= 1;
+  }
+  if residual_for_y < 0 {
+    super_pixels_per_height -= 1;
+  }
+  (super_pixels_per_width, super_pixels_per_height)
+}
+
+fn get_initial_centroid(lab_image_data: &Vec<f64>, w: u32, h: u32, cx: u32, cy: u32) -> LabPixel {
+    let (_, pxl) = get_pixel_3x3_neighbourhood(lab_image_data, w, h, cx, cy)
         .into_iter()
         .flatten()
         .fold((MAX, None), |acc, option| {
             if let Some(next_pxl) = option {
                 let (prev_gradient, _) = acc;
                 let (x, y, _) = next_pxl;
-                let next_gradient = get_gradient_position(img, *x, *y);
+                let next_gradient = get_gradient_position(lab_image_data, w, h, *x, *y);
                 if next_gradient <= prev_gradient {
                     (next_gradient, Some(*next_pxl))
                 } else {
@@ -406,11 +440,16 @@ fn get_initial_centroid(img: &RgbImage, cx: u32, cy: u32) -> LabPixel {
     pxl.unwrap()
 }
 
-fn get_super_pixel_size(w: u32, h: u32, num: u32) -> u32 {
-    (f64::from(w) * f64::from(h) / f64::from(num)).ceil() as u32
+fn get_lab_pixel(lab_data: &Vec<f64>, w: u32, x: u32, y: u32) -> LabPixel {
+  let i = ((y * w + x) * 3) as usize;
+  (
+    x,
+    y,
+    [lab_data[i], lab_data[i+1], lab_data[i+2]],
+  )
 }
 
-fn get_lab_pixel(img: &RgbImage, x: u32, y: u32) -> LabPixel {
+fn get_lab_pixel_from_image(img: &RgbImage, x: u32, y: u32) -> LabPixel {
     let pxl = *img.get_pixel(x, y);
     (
         x,
@@ -420,7 +459,9 @@ fn get_lab_pixel(img: &RgbImage, x: u32, y: u32) -> LabPixel {
 }
 
 fn get_pixel_cross_neighbourhood(
-    img: &RgbImage,
+    lab_image_data: &Vec<f64>,
+    w: u32,
+    h: u32,
     x: u32,
     y: u32,
 ) -> (
@@ -429,52 +470,50 @@ fn get_pixel_cross_neighbourhood(
     Option<LabPixel>,
     Option<LabPixel>,
 ) {
-    let (w, h) = img.dimensions();
     (
         if x != 0 {
-            Some(get_lab_pixel(img, x - 1, y))
+            Some(get_lab_pixel(lab_image_data, w, x - 1, y))
         } else {
             None
         },
         if x + 1 < w {
-            Some(get_lab_pixel(img, x + 1, y))
+            Some(get_lab_pixel(lab_image_data, w,  x + 1, y))
         } else {
             None
         },
         if y != 0 {
-            Some(get_lab_pixel(img, x, y - 1))
+            Some(get_lab_pixel(lab_image_data, w,  x, y - 1))
         } else {
             None
         },
         if y + 1 < h {
-            Some(get_lab_pixel(img, x, y + 1))
+            Some(get_lab_pixel(lab_image_data, w,  x, y + 1))
         } else {
             None
         },
     )
 }
 
-fn get_pixel_3x3_neighbourhood(img: &RgbImage, x: u32, y: u32) -> ([[Option<LabPixel>; 3]; 3]) {
-    let (w, h) = img.dimensions();
-    let pxl = get_lab_pixel(img, x, y);
-    let (left, right, top, bottom) = get_pixel_cross_neighbourhood(img, x, y);
+fn get_pixel_3x3_neighbourhood(lab_image_data: &Vec<f64>, w: u32, h: u32, x: u32, y: u32) -> ([[Option<LabPixel>; 3]; 3]) {
+    let pxl = get_lab_pixel(lab_image_data, w, x, y);
+    let (left, right, top, bottom) = get_pixel_cross_neighbourhood(lab_image_data,  w, h, x, y);
     let top_left = if x != 0 && y != 0 {
-        Some(get_lab_pixel(img, x - 1, y - 1))
+        Some(get_lab_pixel(lab_image_data, w, x - 1, y - 1))
     } else {
         None
     };
     let bottom_left = if x != 0 && y + 1 < h {
-        Some(get_lab_pixel(img, x - 1, y + 1))
+        Some(get_lab_pixel(lab_image_data, w, x - 1, y + 1))
     } else {
         None
     };
     let top_right = if x + 1 < w && y != 0 {
-        Some(get_lab_pixel(img, x + 1, y - 1))
+        Some(get_lab_pixel(lab_image_data, w, x + 1, y - 1))
     } else {
         None
     };
     let bottom_right = if x + 1 < w && y + 1 < h {
-        Some(get_lab_pixel(img, x + 1, y + 1))
+        Some(get_lab_pixel(lab_image_data, w, x + 1, y + 1))
     } else {
         None
     };
@@ -485,18 +524,16 @@ fn get_pixel_3x3_neighbourhood(img: &RgbImage, x: u32, y: u32) -> ([[Option<LabP
     ]
 }
 
-fn get_gradient_position(img: &RgbImage, x: u32, y: u32) -> f64 {
-    let pxl = get_lab_pixel(img, x, y);
-    let (left, right, top, bottom) = get_pixel_cross_neighbourhood(img, x, y);
+fn get_gradient_position(lab_image_data: &Vec<f64>, w: u32, h: u32, x: u32, y: u32) -> f64 {
+    let pxl = get_lab_pixel(lab_image_data, w, x, y);
+    let (left, right, top, bottom) = get_pixel_cross_neighbourhood(lab_image_data, w, h, x, y);
     let left_color = get_neighbour_color_vector(&pxl, left);
     let right_color = get_neighbour_color_vector(&pxl, right);
     let top_color = get_neighbour_color_vector(&pxl, top);
     let bottom_color = get_neighbour_color_vector(&pxl, bottom);
-    half_up(
         l2_norm(sub(right_color, left_color)).powf(2_f64)
-            + l2_norm(sub(bottom_color, top_color)).powf(2_f64),
-        4,
-    )
+            + l2_norm(sub(bottom_color, top_color)).powf(2_f64)
+
 }
 
 fn get_neighbour_color_vector(pxl: &LabPixel, neighbour: Option<LabPixel>) -> LabColor {
@@ -521,20 +558,14 @@ fn l1_distance(x1: u32, y1: u32, x2: u32, y2: u32) -> u32 {
 }
 
 fn get_color_distance(p1: LabColor, p2: LabColor) -> f64 {
-    half_up(
-        ((p1[0] - p2[0]).powi(2) + (p1[1] - p2[1]).powi(2) + (p1[2] - p2[2]).powi(2)).sqrt(),
-        4,
-    )
+        ((p1[0] - p2[0]).powi(2) + (p1[1] - p2[1]).powi(2) + (p1[2] - p2[2]).powi(2)).sqrt()
 }
 
 fn get_spacial_distance(p1: (u32, u32), p2: (u32, u32)) -> f64 {
     let (p1x, p1y) = p1;
     let (p2x, p2y) = p2;
-    half_up(
         (((p1x as i64 - p2x as i64) as f64).powi(2) + ((p1y as i64 - p2y as i64) as f64).powi(2))
-            .sqrt(),
-        4,
-    )
+            .sqrt()
 }
 
 fn get_distance(p1: LabPixel, p2: LabPixel, m: f64, s: f64) -> (f64, f64) {
@@ -543,10 +574,8 @@ fn get_distance(p1: LabPixel, p2: LabPixel, m: f64, s: f64) -> (f64, f64) {
     let color_distance = get_color_distance(color_p1, color_p2);
     (
         color_distance,
-        half_up(
-            color_distance + m / s * get_spacial_distance((p1x, p1y), (p2x, p2y)),
-            4,
-        ),
+
+            color_distance + m / s * get_spacial_distance((p1x, p1y), (p2x, p2y))
     )
 }
 
